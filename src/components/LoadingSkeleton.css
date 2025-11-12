@@ -1,0 +1,61 @@
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+.skeleton--text {
+  height: 1em;
+  margin: 0.25em 0;
+}
+
+.skeleton--rectangular {
+  border-radius: 8px;
+}
+
+.skeleton--circular {
+  border-radius: 50%;
+}
+
+.skeleton__line {
+  margin-bottom: 0.5em;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Dark theme skeleton */
+.theme-dark .skeleton {
+  background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+  background-size: 200% 100%;
+}
+
+/* Sepia theme skeleton */
+.theme-sepia .skeleton {
+  background: linear-gradient(90deg, #e8dcc0 25%, #d4c5a0 50%, #e8dcc0 75%);
+  background-size: 200% 100%;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: #f0f0f0;
+  }
+  
+  .theme-dark .skeleton {
+    background: #2a2a2a;
+  }
+  
+  .theme-sepia .skeleton {
+    background: #e8dcc0;
+  }
+}

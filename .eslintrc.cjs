@@ -12,10 +12,11 @@ module.exports = {
       jsx: true,
     },
   },
-  plugins: ["@typescript-eslint"],
+  plugins: ["@typescript-eslint", "jsx-a11y"],
   extends: [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
+    "plugin:jsx-a11y/recommended",
   ],
   ignorePatterns: ["dist", "node_modules"],
   rules: {
