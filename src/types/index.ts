@@ -124,3 +124,31 @@ export interface ActivityHistoryEntry {
   timestamp: Date;
   details?: Record<string, any>;
 }
+
+export interface SearchableSnippet {
+  id: string;
+  bookId: string;
+  content: string;
+  location: ReadingLocation;
+  contextBefore?: string;
+  contextAfter?: string;
+}
+
+export interface SearchResult {
+  id: string;
+  bookId: string;
+  type: "book" | "content";
+  title: string;
+  author?: string;
+  snippet?: string;
+  location?: ReadingLocation;
+  relevanceScore: number;
+  matchStart?: number;
+  matchEnd?: number;
+}
+
+export interface SearchQuery {
+  text: string;
+  scope: "library" | "current-book";
+  bookId?: string;
+}

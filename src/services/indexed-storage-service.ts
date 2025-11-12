@@ -1,17 +1,27 @@
 import Dexie, { Table } from "dexie";
-import type { BookFile } from "../types";
+import type { BookFile, SearchableSnippet } from "../types";
 
 export interface StoredBookFile extends BookFile {
   updatedDate: Date;
 }
 
+export interface StoredSearchIndex {
+  id: string;
+  bookId: string;
+  snippets: SearchableSnippet[];
+  createdDate: Date;
+  updatedDate: Date;
+}
+
 class LibraryDatabase extends Dexie {
   public files!: Table<StoredBookFile, string>;
+  public searchIndex!: Table<StoredSearchIndex, string>;
 
   constructor(name: string) {
     super(name);
     this.version(1).stores({
       files: "&id, fileName, fileType",
+      searchIndex: "&bookId",
     });
   }
 }
@@ -29,6 +39,7 @@ export class IndexedStorageService {
   private db?: LibraryDatabase;
 
   private fallback = new Map<string, StoredBookFile>();
+  private searchIndexFallback = new Map<string, StoredSearchIndex>();
 
   constructor(private readonly dbName = "ebook-reader-storage") {
     if (typeof indexedDB !== "undefined") {
@@ -122,6 +133,46 @@ export class IndexedStorageService {
       addedDate: new Date(file.addedDate),
       updatedDate: new Date(file.updatedDate),
     }));
+  }
+
+  async saveSearchIndex(
+    bookId: string,
+    snippets: SearchableSnippet[]
+  ): Promise<void> {
+    const now = new Date();
+    const index: StoredSearchIndex = {
+      id: bookId,
+      bookId,
+      snippets,
+      createdDate: now,
+      updatedDate: now,
+    };
+
+    if (this.db?.searchIndex) {
+      await this.db.searchIndex.put(index);
+      return;
+    }
+
+    this.searchIndexFallback.set(bookId, index);
+  }
+
+  async getSearchIndex(
+    bookId: string
+  ): Promise<StoredSearchIndex | undefined> {
+    if (this.db?.searchIndex) {
+      return await this.db.searchIndex.get(bookId);
+    }
+
+    return this.searchIndexFallback.get(bookId);
+  }
+
+  async deleteSearchIndex(bookId: string): Promise<void> {
+    if (this.db?.searchIndex) {
+      await this.db.searchIndex.delete(bookId);
+      return;
+    }
+
+    this.searchIndexFallback.delete(bookId);
   }
 }
 

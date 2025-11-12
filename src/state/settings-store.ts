@@ -67,7 +67,7 @@ type SettingsPersistedState = Pick<SettingsStore, "settings" | "isHydrated">;
 export const useSettingsStore = create<SettingsStore>()(
   devtools(
     persist<SettingsStore, [], [], SettingsPersistedState>(
-      (set) => ({
+      (set, get) => ({
         ...initialState,
 
         updateThemeSettings: (theme: Partial<ThemeSettings>) => {
