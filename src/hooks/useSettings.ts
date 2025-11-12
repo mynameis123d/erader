@@ -1,18 +1,19 @@
 import { useSettingsStore } from "../state/settings-store";
+import type { SettingsStore } from "../state/settings-store";
 
-export const useSettings = () => useSettingsStore((state) => state.settings);
+export const useSettings = () => useSettingsStore((state: SettingsStore) => state.settings);
 
 export const useThemeSettings = () =>
-  useSettingsStore((state) => state.settings.theme);
+  useSettingsStore((state: SettingsStore) => state.settings.theme);
 
 export const useTranslationSettings = () =>
-  useSettingsStore((state) => state.settings.translation);
+  useSettingsStore((state: SettingsStore) => state.settings.translation);
 
 export const useReadingSettings = () =>
-  useSettingsStore((state) => state.settings.reading);
+  useSettingsStore((state: SettingsStore) => state.settings.reading);
 
 export const useSettingsActions = () =>
-  useSettingsStore((state) => ({
+  useSettingsStore((state: SettingsStore) => ({
     updateThemeSettings: state.updateThemeSettings,
     updateTranslationSettings: state.updateTranslationSettings,
     updateReadingSettings: state.updateReadingSettings,
@@ -25,4 +26,4 @@ export const useSettingsActions = () =>
   }));
 
 export const useSettingsHydration = () =>
-  useSettingsStore((state) => state.isHydrated);
+  useSettingsStore((state: SettingsStore) => state.isHydrated);

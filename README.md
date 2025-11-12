@@ -1,6 +1,6 @@
 # Ebook Reader State Management
 
-A robust state management layer for ebook reader applications, built with Zustand, TypeScript, and IndexedDB.
+A robust state management layer for ebook reader applications, built with Zustand, TypeScript, and IndexedDB. Features a responsive, accessible UI with comprehensive testing.
 
 ## Features
 
@@ -11,6 +11,9 @@ A robust state management layer for ebook reader applications, built with Zustan
 - **Customizable settings** - Theme, typography, translation preferences
 - **Activity history** - Track all reading activity and events
 - **Graceful fallbacks** - Works with or without IndexedDB support
+- **Responsive design** - Mobile-first approach with desktop optimization
+- **Accessibility first** - WCAG 2.1 AA compliant with keyboard navigation
+- **Comprehensive testing** - Unit tests + E2E smoke tests with Playwright
 
 ## Architecture
 
@@ -49,6 +52,26 @@ Manages application preferences:
 ```bash
 npm install
 ```
+
+## Quick Start
+
+### Demo Application
+
+A demo settings page is included to showcase the UI components and state management:
+
+```bash
+# Start development server
+npm run dev
+
+# Open http://localhost:3000 in your browser
+```
+
+The demo includes:
+- Responsive settings interface
+- Real-time theme switching
+- Import/export functionality
+- Accessibility features
+- Loading states and skeletons
 
 ## Usage
 
@@ -264,23 +287,53 @@ interface ThemeSettings {
 
 ## Testing
 
-The project includes comprehensive unit tests:
+The project includes comprehensive testing:
+
+### Unit Tests
 
 ```bash
-# Run tests
+# Run unit tests
 npm test
 
 # Run tests in watch mode
 npm run test:watch
 ```
 
+### E2E Smoke Tests
+
+```bash
+# Install Playwright browsers
+npx playwright install
+
+# Run E2E tests
+npm run test:e2e
+
+# Run E2E tests with UI
+npm run test:e2e:ui
+```
+
+### Accessibility Testing
+
+Automated accessibility testing using axe-core:
+- WCAG 2.1 AA compliance checks
+- Color contrast validation
+- Keyboard navigation testing
+- Screen reader compatibility
+- High contrast and reduced motion support
+
+### Test Coverage
+
 Tests cover:
-- Store initialization
+- Store initialization and state management
 - Core actions (add/remove books, update progress, etc.)
-- IndexedDB persistence
-- Session tracking
-- Highlights and bookmarks
-- Settings management
+- IndexedDB persistence and fallbacks
+- Session tracking and activity logging
+- Highlights and bookmarks functionality
+- Settings management and persistence
+- UI interactions and responsive behavior
+- Accessibility compliance
+- Cross-browser compatibility (Chrome, Firefox, Safari)
+- Mobile viewport testing
 
 ## Development
 
@@ -288,18 +341,59 @@ Tests cover:
 # Type checking
 npm run typecheck
 
-# Linting
+# Linting (includes accessibility checks)
 npm run lint
 
 # Build
 npm run build
+
+# Start development server
+npm run dev
 ```
 
-## Browser Support
+## UI Components
 
-- Modern browsers with ES2022 support
-- IndexedDB support (with graceful fallback)
-- localStorage support (with in-memory fallback)
+### SettingsPage
+
+Main settings interface with:
+- **Responsive design** - Mobile-first with desktop optimization
+- **Accessibility** - Full keyboard navigation, ARIA labels, screen reader support
+- **Theme switching** - Light, dark, sepia, and custom themes
+- **Real-time preview** - Settings apply immediately
+- **Loading states** - Skeleton loaders and progress indicators
+- **Error handling** - Graceful error messages and recovery
+
+### LoadingSkeleton
+
+Reusable skeleton loading component:
+- Multiple variants (text, rectangular, circular)
+- Animated shimmer effect
+- Theme-aware styling
+- Reduced motion support
+
+## Responsive Design
+
+- **Mobile** (< 768px): Single column, full-width buttons, vertical layouts
+- **Tablet** (768px - 1024px): Two-column grid, optimized spacing
+- **Desktop** (> 1024px): Three-column grid, maximum width containers
+
+## Accessibility Features
+
+- **WCAG 2.1 AA compliant** - Automated testing with axe-core
+- **Keyboard navigation** - Full keyboard access to all controls
+- **Screen reader support** - Proper ARIA labels and descriptions
+- **High contrast mode** - Enhanced visibility for users with low vision
+- **Reduced motion** - Respects user's motion preferences
+- **Focus management** - Clear focus indicators and logical tab order
+
+## Deployment
+
+For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+Quick deployment options:
+- **Static hosting** (Netlify, Vercel, GitHub Pages)
+- **Docker containers** with Nginx
+- **CI/CD pipelines** with automated testing
 
 ## License
 
