@@ -1,0 +1,38 @@
+{
+  "name": "ebook-reader",
+  "version": "0.1.0",
+  "description": "State management layer for ebook reader application",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "keywords": [
+    "ebook",
+    "reader",
+    "state-management",
+    "zustand",
+    "indexeddb"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dexie": "^3.2.4",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "fake-indexeddb": "^5.0.2",
+    "jsdom": "^23.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  }
+}
