@@ -1,5 +1,6 @@
 import { useLibraryStore } from "./state/library-store";
 import { useSettingsStore } from "./state/settings-store";
+import type { SettingsStore } from "./state/settings-store";
 
 export const initializeStores = async (): Promise<void> => {
   await Promise.all([
@@ -20,7 +21,7 @@ export const waitForHydration = async (): Promise<void> => {
   }
 
   return new Promise<void>((resolve) => {
-    const unsubscribe = useSettingsStore.subscribe((state) => {
+    const unsubscribe = useSettingsStore.subscribe((state: SettingsStore) => {
       if (state.isHydrated) {
         unsubscribe();
         resolve();
