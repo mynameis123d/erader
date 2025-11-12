@@ -124,3 +124,22 @@ export interface ActivityHistoryEntry {
   timestamp: Date;
   details?: Record<string, any>;
 }
+
+export type BookFormat = "epub" | "pdf" | "unknown";
+
+export interface TableOfContentsItem {
+  id: string;
+  label: string;
+  href?: string;
+  subitems?: TableOfContentsItem[];
+  level?: number;
+  location?: ReadingLocation;
+}
+
+export interface BookManifest {
+  format: BookFormat;
+  spine: string[];
+  toc: TableOfContentsItem[];
+  pageCount?: number;
+  chapterCount?: number;
+}

@@ -9,6 +9,7 @@ A robust state management layer for ebook reader applications, built with Zustan
 - **Library management** - Add, organize, and manage your ebook collection
 - **Reading session tracking** - Track reading progress, highlights, and bookmarks
 - **Customizable settings** - Theme, typography, translation preferences
+- **Rich reader view** - EPUB & PDF rendering with TOC, theme controls, progress tracking
 - **Activity history** - Track all reading activity and events
 - **Graceful fallbacks** - Works with or without IndexedDB support
 
@@ -52,7 +53,40 @@ npm install
 
 ## Usage
 
-### Basic Example
+### Reader View (ReaderPage Component)
+
+The `ReaderPage` component provides a complete reading interface with EPUB and PDF support:
+
+```typescript
+import { ReaderPage } from 'ebook-reader';
+
+function App() {
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+
+  if (selectedBookId) {
+    return (
+      <ReaderPage
+        bookId={selectedBookId}
+        onClose={() => setSelectedBookId(null)}
+      />
+    );
+  }
+
+  return <LibraryView onBookSelect={setSelectedBookId} />;
+}
+```
+
+Features:
+- **EPUB & PDF rendering** with format-specific viewers (epubjs, pdf.js)
+- **Table of contents** navigation with hierarchical structure
+- **Progress tracking** with interactive slider
+- **Theme controls** (light/dark/sepia, font size, line height, margins)
+- **Navigation** (next/prev page, TOC jump)
+- **Session persistence** (automatically restores last position)
+
+See [READER_PAGE.md](./READER_PAGE.md) for detailed documentation.
+
+### State Management Example
 
 ```typescript
 import {
