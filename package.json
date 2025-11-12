@@ -1,12 +1,12 @@
 {
   "name": "ebook-reader",
   "version": "0.1.0",
-  "description": "State management layer for ebook reader application",
+  "description": "Modern web ebook reader with React 19, Vite, and Tailwind CSS",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -15,17 +15,19 @@
   "keywords": [
     "ebook",
     "reader",
-    "state-management",
-    "zustand",
-    "indexeddb"
+    "react",
+    "vite",
+    "typescript",
+    "tailwindcss"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "react": "19.0.0-rc.1",
+    "react-dom": "19.0.0-rc.1",
+    "react-router-dom": "^6.21.0",
     "dexie": "^3.2.4",
-    "zustand": "^4.4.7",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
@@ -33,10 +35,15 @@
     "@types/react-dom": "^18.2.18",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
     "eslint": "^8.56.0",
     "fake-indexeddb": "^5.0.2",
     "jsdom": "^23.0.1",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
     "typescript": "^5.3.3",
+    "vite": "^5.0.10",
     "vitest": "^1.1.0"
   }
 }

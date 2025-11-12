@@ -1,0 +1,85 @@
+:root {
+  color-scheme: light;
+  --color-background: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f4f5f8;
+  --color-border: #e3e5e8;
+  --color-text: #1f2933;
+  --color-text-muted: #4a5565;
+  --color-text-subtle: #6b7280;
+  --color-accent: #0ea5e9;
+  --color-accent-soft: rgba(14, 165, 233, 0.1);
+  --color-danger: #ef4444;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-medium: 0 16px 32px rgba(15, 23, 42, 0.12);
+  --shadow-hard: 0 32px 64px rgba(15, 23, 42, 0.14);
+  --transition-base: 0.2s ease;
+  --transition-fast: 0.125s ease;
+  --transition-slow: 0.35s ease;
+  --layout-gutter: clamp(1.5rem, 2vw, 2.5rem);
+  --topbar-height: 3.5rem;
+  --sidebar-width: clamp(16rem, 20vw, 22rem);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Roboto', sans-serif;
+  --font-serif: 'Crimson Pro', 'Georgia', serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-background: #0f172a;
+  --color-surface: #111c33;
+  --color-surface-elevated: #162444;
+  --color-border: rgba(148, 163, 184, 0.12);
+  --color-text: #f7f8fb;
+  --color-text-muted: #cbd5f5;
+  --color-text-subtle: #94a3b8;
+  --color-accent: #38bdf8;
+  --color-accent-soft: rgba(56, 189, 248, 0.18);
+  --color-danger: #f87171;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --shadow-soft: 0 8px 24px rgba(2, 6, 23, 0.55);
+  --shadow-medium: 0 16px 32px rgba(2, 6, 23, 0.65);
+  --shadow-hard: 0 32px 64px rgba(2, 6, 23, 0.75);
+}
+
+:root[data-theme='sepia'] {
+  color-scheme: light;
+  --color-background: #fdf7f0;
+  --color-surface: #f7ead9;
+  --color-surface-elevated: #f2dfc3;
+  --color-border: rgba(133, 93, 48, 0.14);
+  --color-text: #3f2f23;
+  --color-text-muted: #6b4f33;
+  --color-text-subtle: #a6805a;
+  --color-accent: #d8a75a;
+  --color-accent-soft: rgba(216, 167, 90, 0.18);
+  --color-danger: #cf7042;
+  --color-success: #b89455;
+  --color-warning: #d39b3b;
+}
+
+:root[data-density='compact'] {
+  --layout-gutter: clamp(1.25rem, 1.6vw, 2rem);
+  --topbar-height: 3rem;
+  --sidebar-width: clamp(15rem, 18vw, 20rem);
+}
+
+:root[data-density='cozy'] {
+  --layout-gutter: clamp(1.75rem, 2.4vw, 2.75rem);
+  --topbar-height: 3.75rem;
+  --sidebar-width: clamp(17rem, 22vw, 24rem);
+}
+
+:root {
+  --reading-max-width: 64ch;
+  --sidebar-backdrop: rgba(15, 23, 42, 0.45);
+  --glass-elevation: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.45);
+}
