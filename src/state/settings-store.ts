@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import { createPersistStorage } from "./store-utils";
-import type { AppSettings, ThemeSettings, TranslationSettings } from "../types";
+import type { AppSettings, ThemeSettings, TranslationSettings, ReadingSettings } from "../types";
 
 export interface SettingsState {
   settings: AppSettings;
@@ -11,11 +11,14 @@ export interface SettingsState {
 export interface SettingsActions {
   updateThemeSettings: (theme: Partial<ThemeSettings>) => void;
   updateTranslationSettings: (translation: Partial<TranslationSettings>) => void;
+  updateReadingSettings: (reading: Partial<ReadingSettings>) => void;
   toggleAutoSave: () => void;
   toggleAnalytics: () => void;
   updateLastSync: () => void;
   resetSettings: () => void;
   setHydrated: (hydrated: boolean) => void;
+  exportSettings: () => string;
+  importSettings: (settingsJson: string) => void;
 }
 
 export type SettingsStore = SettingsState & SettingsActions;
@@ -37,6 +40,12 @@ const defaultSettings: AppSettings = {
     targetLanguage: "en",
     provider: "google",
   },
+  reading: {
+    defaultPageLayout: "single",
+    readingMode: "paginated",
+    historyRetentionDays: 90,
+    enablePageTransitions: true,
+  },
   autoSaveProgress: true,
   enableAnalytics: false,
 };
@@ -45,6 +54,7 @@ const cloneDefaultSettings = (): AppSettings => ({
   ...defaultSettings,
   theme: { ...defaultSettings.theme },
   translation: { ...defaultSettings.translation },
+  reading: { ...defaultSettings.reading },
 });
 
 const initialState: SettingsState = {
@@ -84,6 +94,18 @@ export const useSettingsStore = create<SettingsStore>()(
           }));
         },
 
+        updateReadingSettings: (reading: Partial<ReadingSettings>) => {
+          set((state) => ({
+            settings: {
+              ...state.settings,
+              reading: {
+                ...state.settings.reading,
+                ...reading,
+              },
+            },
+          }));
+        },
+
         toggleAutoSave: () => {
           set((state) => ({
             settings: {
@@ -117,6 +139,23 @@ export const useSettingsStore = create<SettingsStore>()(
 
         setHydrated: (hydrated: boolean) => {
           set({ isHydrated: hydrated });
+        },
+
+        exportSettings: () => {
+          const state = get();
+          return JSON.stringify(state.settings, null, 2);
+        },
+
+        importSettings: (settingsJson: string) => {
+          try {
+            const importedSettings = JSON.parse(settingsJson) as AppSettings;
+            if (importedSettings.lastSyncDate) {
+              importedSettings.lastSyncDate = new Date(importedSettings.lastSyncDate);
+            }
+            set({ settings: importedSettings });
+          } catch (error) {
+            throw new Error("Invalid settings format");
+          }
         },
       }),
       {
