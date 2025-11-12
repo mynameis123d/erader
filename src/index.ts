@@ -9,3 +9,7 @@ export {
   IndexedStorageService,
   indexedStorageService,
 } from "./services/indexed-storage-service";
+export {
+  FileIngestionService,
+  fileIngestionService,
+} from "./services/file-ingestion-service";
