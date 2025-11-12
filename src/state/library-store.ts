@@ -51,6 +51,8 @@ export interface LibraryActions {
   syncWithStorage: () => Promise<void>;
   setError: (error: string | null) => void;
   clearLibrary: () => void;
+  exportLibraryMetadata: () => string;
+  importLibraryMetadata: (metadataJson: string) => void;
 }
 
 export type LibraryStore = LibraryState & LibraryActions;
@@ -324,6 +326,28 @@ export const useLibraryStore = create<LibraryStore>()(
 
         clearLibrary: () => {
           set(initialState);
+        },
+
+        exportLibraryMetadata: () => {
+          const state = get();
+          const exportData = {
+            books: state.books,
+            collections: state.collections,
+            activity: state.activity,
+          };
+          return JSON.stringify(exportData, null, 2);
+        },
+
+        importLibraryMetadata: (metadataJson: string) => {
+          try {
+            const importedData = JSON.parse(metadataJson);
+            const books = importedData.books.map(reviveBook);
+            const collections = importedData.collections.map(reviveCollection);
+            const activity = importedData.activity.map(reviveActivity);
+            set({ books, collections, activity });
+          } catch (error) {
+            throw new Error("Invalid library metadata format");
+          }
         },
       }),
       {

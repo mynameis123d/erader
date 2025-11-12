@@ -8,14 +8,20 @@ export const useThemeSettings = () =>
 export const useTranslationSettings = () =>
   useSettingsStore((state) => state.settings.translation);
 
+export const useReadingSettings = () =>
+  useSettingsStore((state) => state.settings.reading);
+
 export const useSettingsActions = () =>
   useSettingsStore((state) => ({
     updateThemeSettings: state.updateThemeSettings,
     updateTranslationSettings: state.updateTranslationSettings,
+    updateReadingSettings: state.updateReadingSettings,
     toggleAutoSave: state.toggleAutoSave,
     toggleAnalytics: state.toggleAnalytics,
     updateLastSync: state.updateLastSync,
     resetSettings: state.resetSettings,
+    exportSettings: state.exportSettings,
+    importSettings: state.importSettings,
   }));
 
 export const useSettingsHydration = () =>

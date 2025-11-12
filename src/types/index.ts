@@ -91,11 +91,20 @@ export interface TranslationSettings {
   sourceLanguage?: string;
   targetLanguage: string;
   provider: "google" | "deepl" | "custom";
+  apiKey?: string;
+}
+
+export interface ReadingSettings {
+  defaultPageLayout: "single" | "double" | "scroll";
+  readingMode: "paginated" | "continuous";
+  historyRetentionDays: number;
+  enablePageTransitions: boolean;
 }
 
 export interface AppSettings {
   theme: ThemeSettings;
   translation: TranslationSettings;
+  reading: ReadingSettings;
   autoSaveProgress: boolean;
   enableAnalytics: boolean;
   lastSyncDate?: Date;

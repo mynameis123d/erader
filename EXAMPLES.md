@@ -656,3 +656,171 @@ describe('My Feature', () => {
    // Do single update
    store.updateMetadata(id, { author: 'Author', tags: ['tag1'] });
    ```
+
+## Settings Page Component
+
+The library now includes a fully-featured settings page React component that provides a user interface for all settings management.
+
+### Basic Usage
+
+```typescript
+import { SettingsPage } from './src/components';
+
+function App() {
+  return <SettingsPage />;
+}
+```
+
+### With React Router
+
+```typescript
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { SettingsPage } from './src/components';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/" element={<HomePage />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+### Features
+
+The Settings Page includes:
+
+1. **Appearance Settings**
+   - Theme selection (Light, Dark, Sepia, Custom)
+   - Font customization (family, size, line height)
+   - Margin and alignment controls
+   - Custom colors for custom theme
+
+2. **Reading Settings**
+   - Default page layout
+   - Reading mode (paginated vs continuous)
+   - History retention configuration
+   - Page transitions toggle
+
+3. **Translation Settings**
+   - Enable/disable translation
+   - Language preferences
+   - Provider selection (Google, DeepL, Custom)
+   - Secure API key input
+
+4. **Data Management**
+   - Export/import settings
+   - Export/import library metadata
+   - Reset to defaults (with confirmation)
+
+5. **About Section**
+   - App version
+   - Last sync information
+
+### Customization
+
+You can customize the appearance by overriding the CSS:
+
+```css
+/* Override theme colors */
+.theme-dark .settings-section {
+  background: #1a1a1a;
+  color: #ffffff;
+}
+
+/* Customize button styles */
+.settings-page .btn-secondary {
+  background: #your-color;
+}
+```
+
+### Accessing Settings Programmatically
+
+While the SettingsPage provides a UI, you can also manage settings programmatically:
+
+```typescript
+import { useSettingsActions } from './src/hooks';
+
+function MyComponent() {
+  const {
+    updateThemeSettings,
+    updateReadingSettings,
+    updateTranslationSettings,
+    exportSettings,
+    importSettings,
+    resetSettings,
+  } = useSettingsActions();
+
+  // Update theme
+  const changeTheme = () => {
+    updateThemeSettings({ mode: 'dark', fontSize: 18 });
+  };
+
+  // Export settings to file
+  const backupSettings = () => {
+    const json = exportSettings();
+    // Save to file
+    const blob = new Blob([json], { type: 'application/json' });
+    // ... handle download
+  };
+
+  // Import settings from JSON
+  const restoreSettings = (jsonString: string) => {
+    try {
+      importSettings(jsonString);
+      console.log('Settings restored');
+    } catch (error) {
+      console.error('Failed to import settings');
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={changeTheme}>Dark Mode</button>
+      <button onClick={backupSettings}>Backup</button>
+    </div>
+  );
+}
+```
+
+### Export/Import Library Metadata
+
+```typescript
+import { useLibraryStore } from './src/state/library-store';
+
+function BackupComponent() {
+  const exportLibrary = useLibraryStore(state => state.exportLibraryMetadata);
+  const importLibrary = useLibraryStore(state => state.importLibraryMetadata);
+
+  const handleExport = () => {
+    const json = exportLibrary();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'library-backup.json';
+    a.click();
+  };
+
+  const handleImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const json = e.target?.result as string;
+      importLibrary(json);
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div>
+      <button onClick={handleExport}>Export Library</button>
+      <input type="file" onChange={(e) => handleImport(e.target.files[0])} />
+    </div>
+  );
+}
+```
+
+See `SETTINGS_PAGE.md` for detailed documentation of the Settings Page component.
