@@ -90,7 +90,7 @@ export interface TranslationSettings {
   enabled: boolean;
   sourceLanguage?: string;
   targetLanguage: string;
-  provider: "google" | "deepl" | "custom";
+  provider: "google" | "deepl" | "libretranslate" | "mock";
   apiKey?: string;
 }
 
@@ -123,4 +123,26 @@ export interface ActivityHistoryEntry {
     | "bookmark";
   timestamp: Date;
   details?: Record<string, any>;
+}
+
+export interface TranslationRequest {
+  text: string;
+  sourceLanguage?: string;
+  targetLanguage: string;
+}
+
+export interface TranslationResult {
+  originalText: string;
+  translatedText: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  provider: string;
+  cached: boolean;
+}
+
+export interface TranslationProvider {
+  name: string;
+  translate(request: TranslationRequest): Promise<TranslationResult>;
+  detectLanguage(text: string): Promise<string>;
+  isConfigured(settings: TranslationSettings): boolean;
 }

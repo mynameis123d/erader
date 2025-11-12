@@ -141,8 +141,8 @@ export const useSettingsStore = create<SettingsStore>()(
           set({ isHydrated: hydrated });
         },
 
-        exportSettings: () => {
-          const state = get();
+        exportSettings: (): string => {
+          const state = useSettingsStore.getState();
           return JSON.stringify(state.settings, null, 2);
         },
 

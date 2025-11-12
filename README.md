@@ -9,6 +9,7 @@ A robust state management layer for ebook reader applications, built with Zustan
 - **Library management** - Add, organize, and manage your ebook collection
 - **Reading session tracking** - Track reading progress, highlights, and bookmarks
 - **Customizable settings** - Theme, typography, translation preferences
+- **Built-in translation service** - Translate selected text with multiple providers
 - **Activity history** - Track all reading activity and events
 - **Graceful fallbacks** - Works with or without IndexedDB support
 
@@ -43,6 +44,66 @@ Manages application preferences:
 - Typography preferences
 - Translation settings
 - Auto-save and analytics toggles
+
+### 4. Translation Store (`useTranslationStore`)
+
+Manages translation functionality:
+
+- Text selection and translation requests
+- Translation history and caching
+- UI state for tooltip and panel
+- Integration with multiple translation providers
+
+## Translation Service
+
+The built-in translation service provides seamless text translation with support for multiple providers:
+
+### Supported Providers
+
+- **Google Translate** - Production-ready with API key
+- **DeepL** - High-quality translations with API key  
+- **LibreTranslate** - Self-hosted, privacy-focused
+- **Mock** - For testing and development (no API key required)
+
+### Features
+
+- **Text selection integration** - Select text to translate with tooltip
+- **Sentence boundary detection** - Automatically expands selection to full sentences
+- **Secure API key storage** - Encrypted local storage with masking
+- **Request caching** - Reduces API calls and improves performance
+- **Rate limiting** - Prevents API abuse
+- **Translation history** - Persistent history of recent translations
+- **Multi-language support** - 10+ target languages
+- **Offline testing** - Mock provider for development
+
+### Basic Translation Usage
+
+```typescript
+import { useTextSelection, useTranslationStore, TranslationManager } from './src';
+
+// Enable translation in your reader component
+function Reader() {
+  useTextSelection(); // Handle text selection
+  
+  return (
+    <div>
+      <div className="content">
+        {/* Your reading content */}
+      </div>
+      <TranslationManager /> {/* Renders tooltip and panel */}
+    </div>
+  );
+}
+
+// Configure translation settings
+const { updateTranslationSettings } = useSettingsStore();
+updateTranslationSettings({
+  enabled: true,
+  provider: 'mock', // Use 'google', 'deepl', etc. for production
+  targetLanguage: 'es',
+  apiKey: 'your-api-key' // Optional for mock provider
+});
+```
 
 ## Installation
 

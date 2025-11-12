@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   useSettings,
   useSettingsActions,
@@ -7,6 +7,7 @@ import {
   useReadingSettings,
 } from "../hooks/useSettings";
 import { useLibraryStore } from "../state/library-store";
+import { secureStorage } from "../services/secure-storage";
 import "./SettingsPage.css";
 
 export const SettingsPage: React.FC = () => {
@@ -21,6 +22,7 @@ export const SettingsPage: React.FC = () => {
   }));
 
   const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +30,42 @@ export const SettingsPage: React.FC = () => {
   const handleThemeChange = (updates: Partial<typeof themeSettings>) => {
     actions.updateThemeSettings(updates);
     applyThemeToRoot(updates);
+  };
+
+  // Load API key from secure storage when provider changes
+  useEffect(() => {
+    const loadApiKey = async () => {
+      try {
+        const storedKey = await secureStorage.getItem(`${translationSettings.provider}-api-key`);
+        if (storedKey) {
+          setApiKeyInput(storedKey);
+          actions.updateTranslationSettings({ apiKey: storedKey });
+        } else {
+          setApiKeyInput(translationSettings.apiKey || "");
+        }
+      } catch (error) {
+        console.error("Failed to load API key:", error);
+        setApiKeyInput(translationSettings.apiKey || "");
+      }
+    };
+
+    loadApiKey();
+  }, [translationSettings.provider]);
+
+  const handleApiKeyChange = async (value: string) => {
+    setApiKeyInput(value);
+    
+    try {
+      if (value) {
+        await secureStorage.setItem(`${translationSettings.provider}-api-key`, value);
+        actions.updateTranslationSettings({ apiKey: value });
+      } else {
+        await secureStorage.removeItem(`${translationSettings.provider}-api-key`);
+        actions.updateTranslationSettings({ apiKey: undefined });
+      }
+    } catch (error) {
+      console.error("Failed to save API key:", error);
+    }
   };
 
   const applyThemeToRoot = (theme: Partial<typeof themeSettings>) => {
@@ -400,9 +438,8 @@ export const SettingsPage: React.FC = () => {
               {translationSettings.enabled && (
                 <>
                   <div className="setting-item">
-                    <label htmlFor="target-language">Preferred Language</label>
-                    <input
-                      type="text"
+                    <label htmlFor="target-language">Target Language</label>
+                    <select
                       id="target-language"
                       value={translationSettings.targetLanguage}
                       onChange={(e) =>
@@ -410,8 +447,18 @@ export const SettingsPage: React.FC = () => {
                           targetLanguage: e.target.value,
                         })
                       }
-                      placeholder="e.g., en, es, fr"
-                    />
+                    >
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                      <option value="fr">French</option>
+                      <option value="de">German</option>
+                      <option value="it">Italian</option>
+                      <option value="pt">Portuguese</option>
+                      <option value="ru">Russian</option>
+                      <option value="ja">Japanese</option>
+                      <option value="ko">Korean</option>
+                      <option value="zh">Chinese</option>
+                    </select>
                   </div>
 
                   <div className="setting-item">
@@ -421,39 +468,51 @@ export const SettingsPage: React.FC = () => {
                       value={translationSettings.provider}
                       onChange={(e) =>
                         actions.updateTranslationSettings({
-                          provider: e.target.value as "google" | "deepl" | "custom",
+                          provider: e.target.value as "google" | "deepl" | "libretranslate" | "mock",
                         })
                       }
                     >
                       <option value="google">Google Translate</option>
                       <option value="deepl">DeepL</option>
-                      <option value="custom">Custom</option>
+                      <option value="libretranslate">LibreTranslate</option>
+                      <option value="mock">Mock (Testing)</option>
                     </select>
                   </div>
 
-                  <div className="setting-item">
-                    <label htmlFor="api-key">API Key</label>
-                    <div className="api-key-input">
-                      <input
-                        type={showApiKey ? "text" : "password"}
-                        id="api-key"
-                        value={translationSettings.apiKey || ""}
-                        onChange={(e) =>
-                          actions.updateTranslationSettings({
-                            apiKey: e.target.value,
-                          })
-                        }
-                        placeholder="Enter your API key"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="toggle-visibility-btn"
-                      >
-                        {showApiKey ? "Hide" : "Show"}
-                      </button>
+                  {translationSettings.provider !== "mock" && (
+                    <div className="setting-item">
+                      <label htmlFor="api-key">API Key</label>
+                      <div className="api-key-input">
+                        <input
+                          type={showApiKey ? "text" : "password"}
+                          id="api-key"
+                          value={apiKeyInput}
+                          onChange={(e) => handleApiKeyChange(e.target.value)}
+                          placeholder="Enter your API key"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="toggle-visibility-btn"
+                        >
+                          {showApiKey ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                      {apiKeyInput && (
+                        <div className="api-key-preview">
+                          Stored: {secureStorage.maskApiKey(apiKeyInput)}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
+
+                  {translationSettings.provider === "mock" && (
+                    <div className="setting-item">
+                      <div className="info-message">
+                        Mock provider is for testing purposes only. It simulates translations without requiring an API key.
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
