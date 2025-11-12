@@ -1,0 +1,102 @@
+.annotations-toolbar {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  gap: 8px;
+  z-index: 9998;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-button {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+}
+
+.toolbar-button:hover {
+  background: #f0f0f0;
+  border-color: #2196f3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.annotations-toggle {
+  position: relative;
+}
+
+.annotations-toggle::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #f44336;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 2px 4px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.annotations-toggle[data-count="0"]::after {
+  display: none;
+}
+
+.annotations-toggle:not([data-count="0"])::after {
+  opacity: 1;
+}
+
+/* Dark theme support */
+:global(.theme-dark) .annotations-toolbar {
+  background: rgba(45, 45, 45, 0.9);
+}
+
+:global(.theme-dark) .toolbar-button {
+  background: #3a3a3a;
+  border-color: #555;
+  color: #fff;
+}
+
+:global(.theme-dark) .toolbar-button:hover {
+  background: #444;
+  border-color: #2196f3;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .annotations-toolbar {
+    top: 10px;
+    right: 10px;
+    padding: 6px;
+    gap: 6px;
+  }
+  
+  .toolbar-button {
+    min-width: 36px;
+    height: 36px;
+    font-size: 14px;
+    padding: 8px;
+  }
+}

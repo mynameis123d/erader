@@ -142,7 +142,7 @@ export const useSettingsStore = create<SettingsStore>()(
         },
 
         exportSettings: () => {
-          const state = get();
+          const state = useSettingsStore.getState();
           return JSON.stringify(state.settings, null, 2);
         },
 
