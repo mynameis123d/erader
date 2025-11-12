@@ -1,3 +1,41 @@
+export type BookFormat = "epub" | "pdf" | "html" | "text" | "unknown";
+
+export interface ManifestResource {
+  id: string;
+  href?: string;
+  mediaType?: string;
+  title?: string;
+  order: number;
+  properties?: Record<string, unknown>;
+}
+
+export interface ContentManifestItem {
+  id: string;
+  title?: string;
+  href?: string;
+  order: number;
+  level?: number;
+  spineItemId?: string;
+  children?: ContentManifestItem[];
+}
+
+export interface ManifestTextLayer {
+  id: string;
+  page: number;
+  label?: string;
+}
+
+export interface ContentManifest {
+  format: BookFormat;
+  spine: ManifestResource[];
+  tableOfContents: ContentManifestItem[];
+  pageCount?: number;
+  textLayers?: ManifestTextLayer[];
+  resources?: ManifestResource[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface BookMetadata {
   title: string;
   author?: string;
@@ -8,6 +46,9 @@ export interface BookMetadata {
   description?: string;
   coverImage?: string;
   tags?: string[];
+  format?: BookFormat;
+  identifiers?: Record<string, string>;
+  pageCount?: number;
 }
 
 export interface BookFile {
@@ -17,12 +58,15 @@ export interface BookFile {
   fileSize: number;
   blob: Blob;
   addedDate: Date;
+  manifest?: ContentManifest;
+  coverImageBlob?: Blob;
 }
 
 export interface Book {
   id: string;
   fileId: string;
   metadata: BookMetadata;
+  manifest?: ContentManifest;
   isFavorite: boolean;
   dateAdded: Date;
   lastOpened?: Date;
@@ -123,4 +167,16 @@ export interface ActivityHistoryEntry {
     | "bookmark";
   timestamp: Date;
   details?: Record<string, any>;
+}
+
+export type IngestionStatus = "success" | "duplicate" | "unsupported" | "error";
+
+export interface FileIngestionResult {
+  status: IngestionStatus;
+  fileName: string;
+  bookId?: string;
+  metadata?: BookMetadata;
+  manifest?: ContentManifest;
+  duplicateOf?: string;
+  error?: string;
 }

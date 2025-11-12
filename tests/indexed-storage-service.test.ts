@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { IndexedStorageService } from "../src/services/indexed-storage-service";
-import type { BookFile } from "../src/types";
+import type { BookFile, ContentManifest } from "../src/types";
 
 describe("IndexedStorageService", () => {
   let service: IndexedStorageService;
@@ -10,6 +10,12 @@ describe("IndexedStorageService", () => {
   });
 
   it("should save and retrieve a file", async () => {
+    const manifest: ContentManifest = {
+      format: "epub",
+      spine: [],
+      tableOfContents: [],
+    };
+
     const file: BookFile = {
       id: "file-1",
       fileName: "test.epub",
@@ -17,6 +23,7 @@ describe("IndexedStorageService", () => {
       fileSize: 1024,
       blob: new Blob(["test content"], { type: "application/epub+zip" }),
       addedDate: new Date(),
+      manifest,
     };
 
     await service.saveFile(file);
@@ -26,6 +33,7 @@ describe("IndexedStorageService", () => {
     expect(retrieved?.fileName).toBe("test.epub");
     expect(retrieved?.fileType).toBe("application/epub+zip");
     expect(retrieved?.fileSize).toBe(1024);
+    expect(retrieved?.manifest?.format).toBe("epub");
   });
 
   it("should return undefined for non-existent file", async () => {

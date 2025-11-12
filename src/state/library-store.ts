@@ -7,6 +7,7 @@ import type {
   BookFile,
   BookMetadata,
   Collection,
+  ContentManifest,
 } from "../types";
 import { indexedStorageService } from "../services/indexed-storage-service";
 
@@ -38,7 +39,11 @@ export interface LibraryState {
 }
 
 export interface LibraryActions {
-  addBook: (file: BookFile, metadata: BookMetadata) => Promise<void>;
+  addBook: (
+    file: BookFile,
+    metadata: BookMetadata,
+    manifest?: ContentManifest
+  ) => Promise<string>;
   removeBook: (bookId: string) => Promise<void>;
   updateMetadata: (bookId: string, metadata: Partial<BookMetadata>) => void;
   toggleFavorite: (bookId: string) => void;
@@ -76,19 +81,35 @@ export const useLibraryStore = create<LibraryStore>()(
       (set, get) => ({
         ...initialState,
 
-        addBook: async (file: BookFile, metadata: BookMetadata) => {
+        addBook: async (
+          file: BookFile,
+          metadata: BookMetadata,
+          manifest?: ContentManifest
+        ) => {
           set({ isLoading: true, error: null });
 
           try {
-            await indexedStorageService.saveFile(file);
+            const manifestToPersist = manifest ?? file.manifest;
+            const fileRecord: BookFile = {
+              ...file,
+              manifest: manifestToPersist ?? file.manifest,
+            };
+
+            await indexedStorageService.saveFile(fileRecord);
 
             const now = new Date();
             const bookId = crypto.randomUUID();
 
+            const metadataToPersist =
+              manifestToPersist?.pageCount && metadata.pageCount === undefined
+                ? { ...metadata, pageCount: manifestToPersist.pageCount }
+                : { ...metadata };
+
             const newBook: Book = {
               id: bookId,
-              fileId: file.id,
-              metadata,
+              fileId: fileRecord.id,
+              metadata: metadataToPersist,
+              manifest: manifestToPersist ?? fileRecord.manifest,
               isFavorite: false,
               dateAdded: now,
               collectionIds: [],
@@ -100,7 +121,7 @@ export const useLibraryStore = create<LibraryStore>()(
               type: "added",
               timestamp: now,
               details: {
-                title: metadata.title,
+                title: metadataToPersist.title,
               },
             };
 
@@ -109,6 +130,8 @@ export const useLibraryStore = create<LibraryStore>()(
               activity: [...state.activity, activityEntry],
               isLoading: false,
             }));
+
+            return bookId;
           } catch (error) {
             const errorMessage =
               error instanceof Error ? error.message : "Failed to add book";
