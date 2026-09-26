@@ -6,6 +6,10 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 export default defineConfig(({ mode }) => ({
   plugins: [react(), ...(mode === "single" ? [viteSingleFile()] : [])],
   base: "./",
-  build: { outDir: mode === "single" ? "dist-single" : "dist" },
+  build: {
+    outDir: mode === "single" ? "dist-single" : "dist",
+    // The landing page ships alongside the app in normal builds.
+    rollupOptions: mode === "single" ? {} : { input: { app: "index.html", landing: "landing.html" } },
+  },
   test: { environment: "jsdom" },
 }));
