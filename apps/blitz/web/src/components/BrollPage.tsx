@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Clock, Download, ExternalLink, Eye, Film, Heart, Loader2, Search, ShieldCheck, Trash2, Upload, X } from "lucide-react";
+import { Check, Clock, Download, ExternalLink, Eye, Film, Heart, Image as ImageIcon, Loader2, Search, ShieldCheck, Square, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { USABLE_RIGHTS, type ClipRights } from "../../../shared/types";
-import { api, fmtCount, type BrollClip } from "../api";
+import { api, fmtCount, type BrollClip, type ScrapeJob } from "../api";
 import { toast } from "./Toaster";
 
 type Filter = "all" | "ready" | "permission";
@@ -24,6 +24,8 @@ export function BrollPage() {
   const [discovering, setDiscovering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [clearing, setClearing] = useState<BrollClip | null>(null);
+  const [jobs, setJobs] = useState<ScrapeJob[]>([]);
+  const [runId, setRunId] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +37,40 @@ export function BrollPage() {
       })
       .catch((e) => toast.error(e.message));
   }, []);
+
+  // Poll scrape jobs while any is running; reload clips when one finishes.
+  const running = jobs.some((j) => !["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"].includes(j.status));
+  useEffect(() => {
+    api.scrapes().then((r) => setJobs(r.scrapes)).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(async () => {
+      const r = await api.scrapes().catch(() => null);
+      if (!r) return;
+      const finished = r.scrapes.filter((j) => j.imported && !jobs.find((o) => o.runId === j.runId)?.imported);
+      setJobs(r.scrapes);
+      if (finished.length) {
+        const fresh = await api.broll();
+        setClips(fresh.clips);
+        const n = finished.reduce((a, j) => a + (j.imported?.clips ?? 0), 0);
+        const refs = finished.reduce((a, j) => a + (j.imported?.references ?? 0), 0);
+        toast.success(`Scrape finished: ${n} clips here, ${refs} trending posts for Remix`);
+      }
+    }, 5000);
+    return () => clearInterval(t);
+  }, [running, jobs]);
+
+  const importRun = async () => {
+    try {
+      const { job } = await api.startScrape({ runId: runId.trim() });
+      setJobs((j) => [job, ...j.filter((x) => x.runId !== job.runId)]);
+      setRunId("");
+      toast.info(`Importing Apify run ${job.runId}…`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
 
   const replace = (c: BrollClip) => setClips((xs) => (xs ?? []).map((x) => (x.id === c.id ? c : x)));
 
@@ -50,10 +86,9 @@ export function BrollPage() {
   const discover = async () => {
     setDiscovering(true);
     try {
-      const r = await api.discoverBroll(query.trim() || undefined);
-      setClips((xs) => [...(xs ?? []), ...r.clips]);
-      toast.success(r.added ? `Found ${r.added} popular clips. Ask the creators before using them` : "No new clips for that search");
-      setFilter("permission");
+      const { job } = await api.discoverBroll(query.trim() || undefined);
+      setJobs((j) => [job, ...j]);
+      toast.info("Scraping TikTok through Apify. Results land here in a minute or two");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -110,15 +145,15 @@ export function BrollPage() {
     <div className="broll">
       <header className="page-head">
         <div>
-          <h1>B-roll</h1>
+          <h1>Media Bank</h1>
           <p className="sub">
-            {ready} clip{ready === 1 ? "" : "s"} ready. Wall of Text posts use these first, then stock footage.
+            {ready} item{ready === 1 ? "" : "s"} ready. Blitz uses your media first, then stock photos and footage. Tag product demos with "demo" for Hook + Demo posts.
           </p>
         </div>
         <div className="head-actions">
-          <input ref={fileRef} type="file" accept="video/mp4,video/quicktime,video/webm" multiple hidden onChange={(e) => upload(e.target.files)} />
+          <input ref={fileRef} type="file" accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => upload(e.target.files)} />
           <button className="btn btn-primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            {uploading ? <Loader2 size={15} className="spin" /> : <Upload size={15} />} Upload clips
+            {uploading ? <Loader2 size={15} className="spin" /> : <Upload size={15} />} Upload media
           </button>
         </div>
       </header>
@@ -146,6 +181,31 @@ export function BrollPage() {
           </button>
         </div>
         {!apify && <small className="muted">Add APIFY_TOKEN to apps/blitz/.env to turn this on.</small>}
+        <div className="discover-form run-import">
+          <input placeholder="Or import an existing Apify run ID (e.g. shAvi3SgXuKTxZUCG)" value={runId} onChange={(e) => setRunId(e.target.value)} />
+          <button className="btn btn-ghost" disabled={!apify || !/^[A-Za-z0-9]{8,32}$/.test(runId.trim())} onClick={importRun}>
+            Import run
+          </button>
+        </div>
+        {jobs.length > 0 && (
+          <div className="jobs">
+            {jobs.slice(0, 5).map((j) => (
+              <div className="job" key={j.runId}>
+                <span className={`job-status ${j.status}`}>{j.status === "RUNNING" || j.status === "READY" ? <Loader2 size={11} className="spin" /> : null} {j.status.toLowerCase()}</span>
+                <span className="tags-inline">
+                  {j.hashtags.map((h) => `#${h}`).join(" ")} · run {j.runId}
+                  {j.imported && ` · ${j.imported.clips} clips, ${j.imported.references} trending posts`}
+                  {j.error && ` · ${j.error}`}
+                </span>
+                {(j.status === "RUNNING" || j.status === "READY") && (
+                  <button className="btn btn-xs btn-ghost" onClick={() => api.abortScrape(j.runId).then(() => setJobs((xs) => xs.map((x) => (x.runId === j.runId ? { ...x, status: "ABORTED" } : x))))}>
+                    <Square size={11} /> Stop
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="segmented">
@@ -239,8 +299,8 @@ function ClipTile({
       onHoverEnd={() => setHover(false)}
     >
       <div className="clip-media" style={clip.thumbnail ? { backgroundImage: `url("${clip.thumbnail}")` } : undefined}>
-        {usable && hover && <video src={clip.fileUrl!} autoPlay muted loop playsInline />}
-        {!clip.thumbnail && !usable && <Film size={22} className="clip-placeholder" />}
+        {usable && hover && clip.kind !== "image" && <video src={clip.fileUrl!} autoPlay muted loop playsInline />}
+        {!clip.thumbnail && !usable && (clip.kind === "image" ? <ImageIcon size={22} className="clip-placeholder" /> : <Film size={22} className="clip-placeholder" />)}
         <span className={`rights rights-${r.tone}`}>
           {r.tone === "ok" ? <ShieldCheck size={12} /> : r.tone === "info" ? <Clock size={12} /> : null}
           {r.label}

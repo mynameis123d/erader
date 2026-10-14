@@ -8,7 +8,8 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build:preview": "vite build --mode demo"
+    "build:preview": "vite build --mode demo",
+    "check": "tsx scripts/check-keys.ts"
   },
   "license": "MIT",
   "dependencies": {

@@ -35,6 +35,22 @@ Production: `npm run build && npm start` serves the UI and API from one port.
 | `APIFY_TOKEN` | Settings → Remix library → **Pull trending**: imports the most-viewed TikToks for your topics (real hooks and stats) | Built-in formats + posts you add by hand |
 | `BUFFER_ORGANIZATION_ID` | Optional: pin a Buffer org | The first org on the account is used |
 
+## Check your keys
+
+```bash
+npm run check                       # Buffer channels, Apify token, Pexels, public URL
+npm run check -- --run=<runId>      # also read an existing Apify run's dataset
+npm run check -- --scrape           # also run a small live TikTok scrape (#sneakers, 5 posts)
+```
+
+## How Blitz chooses content
+
+- **Remix vs Create New**: Settings → Blitz preferences sets the remix %. Remix adapts trending posts (scraped with Apify or added by hand); Create New writes original ideas from your content angles, in your brand voice.
+- **Formats**: Slideshow, Wall of Text, Green Screen (image on top, creator clip below) and Hook + Demo (hook clip, then your product demo). Weights set how often each appears.
+- **Visuals**: your Media Bank first (uploads, and TikTok clips whose creators agreed), then Pexels/Pixabay stock, then painted scenes. Tag product demos `demo` and talking-head clips `creator`.
+- **Background generation**: the server keeps the feed topped up to "Cards to keep ready".
+- **Apify**: runs use `POST /acts/{actor}/runs`, then poll `GET /actor-runs/{id}`, then read `GET /datasets/{id}/items`. Media Bank → "Import run" pulls in a run you started elsewhere.
+
 ## Using it
 
 - **Formats**: *Wall of Text* (a stock video clip matched to the text, with outlined white text over it, rendered to a 7-15 s MP4) and *Slideshow* (photo slides with TikTok-style caption pills). With a video key, half of each batch is Wall of Text.

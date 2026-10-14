@@ -196,6 +196,139 @@ export async function renderVideoCard(card: BlitzCard, mediaDir: string): Promis
   return { images: [url("cover.png")], video: url("video.mp4") };
 }
 
+/** Transparent PNG with TikTok-style caption pills (used over video). */
+export async function renderPillText(text: string, textY: number, w = 1080, h = 1920): Promise<Buffer> {
+  const canvas = createCanvas(w, h);
+  const ctx = canvas.getContext("2d");
+  const fontSize = Math.round(w * 0.05);
+  ctx.font = `bold ${fontSize}px ${fontFamily}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const lines = wrapLines(ctx, text, w * 0.78);
+  const lineH = fontSize * 1.32;
+  const padX = fontSize * 0.42;
+  const blockH = lines.length * lineH;
+  let y = Math.min(Math.max(textY * h - blockH / 2, h * 0.06), h * 0.94 - blockH) + lineH / 2;
+  for (const line of lines) {
+    const tw = ctx.measureText(line).width;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.roundRect(w / 2 - tw / 2 - padX, y - lineH / 2, tw + padX * 2, lineH, fontSize * 0.28);
+    ctx.fill();
+    ctx.fillStyle = "#111111";
+    ctx.fillText(line, w / 2, y + fontSize * 0.04);
+    y += lineH;
+  }
+  return canvas.encode("png");
+}
+
+interface SegmentSpec {
+  /** Local path of a clip, or null to use the still image with a slow push-in. */
+  clip: string | null;
+  still: string;
+  overlay: string;
+  seconds: number;
+  /** "full": background fills the frame. "bottom": background fills the lower part (Green Screen). */
+  layout: "full" | "bottom";
+  out: string;
+}
+
+const W = 1080;
+const H = 1920;
+const GREEN_SPLIT = 1114; // top 58% is the background image, the creator clip sits below
+
+/** One H.264 + silent AAC segment. All segments share codec settings so they can be concatenated losslessly. */
+async function renderSegment(seg: SegmentSpec) {
+  const bh = seg.layout === "bottom" ? H - GREEN_SPLIT : H;
+  const fill = `scale=${W}:${bh}:force_original_aspect_ratio=increase,crop=${W}:${bh},setsar=1`;
+  const input = seg.clip ? ["-stream_loop", "-1", "-i", seg.clip] : ["-loop", "1", "-framerate", "30", "-i", seg.still];
+  const motion = seg.clip
+    ? `${fill},fps=30`
+    : `${fill},zoompan=z='min(zoom+0.0007,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${bh}:fps=30`;
+  const place = seg.layout === "bottom" ? `,pad=${W}:${H}:0:${GREEN_SPLIT}:black` : "";
+  await run(
+    ffmpegBin(),
+    [
+      "-y",
+      ...input,
+      "-i", seg.overlay,
+      "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+      "-filter_complex", `[0:v]${motion}${place}[bg];[bg][1:v]overlay=0:0,format=yuv420p[v]`,
+      "-map", "[v]", "-map", "2:a",
+      "-t", seg.seconds.toFixed(2),
+      "-r", "30",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+      "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+      "-movflags", "+faststart",
+      seg.out,
+    ],
+    { timeout: 180000 },
+  );
+}
+
+async function concatSegments(parts: string[], out: string, dir: string) {
+  const list = path.join(dir, "segments.txt");
+  fs.writeFileSync(list, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"));
+  await run(ffmpegBin(), ["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", out], { timeout: 120000 });
+}
+
+function freshDir(mediaDir: string, card: BlitzCard, name: string) {
+  const rel = path.join("renders", card.id, name);
+  const dir = path.join(mediaDir, rel);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  return { rel, dir, url: (f: string) => `/media/${rel}/${f}`.replace(/\\/g, "/") };
+}
+
+/** Green Screen: background image on top with commentary over it, creator clip underneath. */
+export async function renderGreenScreen(card: BlitzCard, mediaDir: string): Promise<RenderOutput> {
+  const { dir, url } = freshDir(mediaDir, card, "green");
+  const slide = card.slides[0];
+  // Top panel: image (or scene) cropped to the upper part, text drawn over it; lower part left transparent.
+  const top = createCanvas(W, H);
+  const ctx = top.getContext("2d");
+  const panel = await loadImage(await renderSlide({ ...slide, text: "" }, "9:16", mediaDir));
+  const scale = Math.max(W / panel.width, GREEN_SPLIT / panel.height);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, GREEN_SPLIT);
+  ctx.clip();
+  ctx.drawImage(panel, (W - panel.width * scale) / 2, (GREEN_SPLIT - panel.height * scale) / 2, panel.width * scale, panel.height * scale);
+  ctx.restore();
+  ctx.drawImage(await loadImage(await renderOutlineText(slide.text, Math.min(slide.textY, 0.5), W, H)), 0, 0);
+  fs.writeFileSync(path.join(dir, "overlay.png"), await top.encode("png"));
+
+  const creator = card.video ? await download(card.video.url, path.join(dir, "creator.mp4"), mediaDir) : null;
+  const still = path.join(dir, "creator-still.png");
+  if (!creator) fs.writeFileSync(still, await renderSlide({ ...slide, id: `${slide.id}-c`, imageUrl: null, imageQuery: "interior", text: "" }, "9:16", mediaDir));
+  await renderSegment({ clip: creator, still, overlay: path.join(dir, "overlay.png"), seconds: readingSeconds(slide.text), layout: "bottom", out: path.join(dir, "video.mp4") });
+  fs.copyFileSync(path.join(dir, "overlay.png"), path.join(dir, "cover.png"));
+  return { images: [url("cover.png")], video: url("video.mp4") };
+}
+
+/** Hook + Demo: a short hook clip with the hook line, then the product demo with a caption. */
+export async function renderHookDemo(card: BlitzCard, mediaDir: string): Promise<RenderOutput> {
+  const { dir, url } = freshDir(mediaDir, card, "hookdemo");
+  const [hook, demo] = card.slides;
+  fs.writeFileSync(path.join(dir, "hook-text.png"), await renderOutlineText(hook.text, hook.textY));
+  fs.writeFileSync(path.join(dir, "demo-text.png"), await renderPillText(demo?.text ?? "", demo?.textY ?? 0.85));
+  const hookClip = card.video ? await download(card.video.url, path.join(dir, "hook.mp4"), mediaDir) : null;
+  const demoClip = card.demoVideo ? await download(card.demoVideo.url, path.join(dir, "demo.mp4"), mediaDir) : null;
+  const hookStill = path.join(dir, "hook-still.png");
+  const demoStill = path.join(dir, "demo-still.png");
+  fs.writeFileSync(hookStill, await renderSlide({ ...hook, imageUrl: card.video?.poster ?? null, text: "" }, "9:16", mediaDir));
+  fs.writeFileSync(demoStill, await renderSlide({ ...(demo ?? hook), imageUrl: null, text: "" }, "9:16", mediaDir));
+
+  const a = path.join(dir, "part-a.mp4");
+  const b = path.join(dir, "part-b.mp4");
+  await renderSegment({ clip: hookClip, still: hookStill, overlay: path.join(dir, "hook-text.png"), seconds: 3.5, layout: "full", out: a });
+  const demoSeconds = Math.min(Math.max(card.demoVideo?.duration ?? 6, 4), 12);
+  await renderSegment({ clip: demoClip, still: demoStill, overlay: path.join(dir, "demo-text.png"), seconds: demoSeconds, layout: "full", out: b });
+  await concatSegments([a, b], path.join(dir, "video.mp4"), dir);
+  fs.writeFileSync(path.join(dir, "cover.png"), await renderSlide({ ...hook, imageUrl: card.video?.poster ?? null }, "9:16", mediaDir, { captionStyle: "outline" }));
+  return { images: [url("cover.png")], video: url("video.mp4") };
+}
+
 export interface RenderOutput {
   images: string[];
   video?: string;
@@ -204,6 +337,8 @@ export interface RenderOutput {
 /** Render a card's slides to PNGs (and optionally an MP4) under data/media/renders. Returns /media paths. */
 export async function renderCard(card: BlitzCard, aspect: Aspect, withVideo: boolean, mediaDir: string): Promise<RenderOutput> {
   if (card.format === "video") return renderVideoCard(card, mediaDir);
+  if (card.format === "green_screen") return renderGreenScreen(card, mediaDir);
+  if (card.format === "hook_demo") return renderHookDemo(card, mediaDir);
   const rel = path.join("renders", card.id, aspect.replace(":", "x"));
   const dir = path.join(mediaDir, rel);
   fs.rmSync(dir, { recursive: true, force: true });

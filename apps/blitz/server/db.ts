@@ -1,6 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BlitzCard, BrollClip, ProductProfile, PublishingSettings, ViralReference } from "../shared/types.js";
+import { DEFAULT_PREFERENCES, type BlitzCard, type BlitzPreferences, type BrollClip, type ProductProfile, type PublishingSettings, type ViralReference } from "../shared/types.js";
+
+/** One Apify scrape: a run started here, or an existing run imported by ID. */
+export interface ScrapeJob {
+  runId: string;
+  datasetId?: string;
+  hashtags: string[];
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  imported?: { references: number; clips: number };
+  error?: string;
+}
 
 export interface DbShape {
   profile: ProductProfile | null;
@@ -9,6 +21,8 @@ export interface DbShape {
   references: ViralReference[];
   publishing: PublishingSettings;
   broll: BrollClip[];
+  preferences: BlitzPreferences;
+  scrapes: ScrapeJob[];
 }
 
 const empty = (): DbShape => ({
@@ -17,6 +31,8 @@ const empty = (): DbShape => ({
   references: [],
   publishing: { autoPublish: false, channelIds: [], mode: "addToQueue", slideshowsAsVideo: false },
   broll: [],
+  preferences: structuredClone(DEFAULT_PREFERENCES),
+  scrapes: [],
 });
 
 /** Tiny JSON-file store. Good enough for a single-user tool; swap for SQLite/Postgres later. */
@@ -27,7 +43,9 @@ export class Db {
     this.data = empty();
     if (fs.existsSync(file)) {
       try {
-        this.data = { ...empty(), ...JSON.parse(fs.readFileSync(file, "utf8")) };
+        const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+        const base = empty();
+        this.data = { ...base, ...saved, preferences: { ...base.preferences, ...saved.preferences, formatWeights: { ...base.preferences.formatWeights, ...saved.preferences?.formatWeights } } };
       } catch {
         fs.renameSync(file, `${file}.corrupt-${Date.now()}`);
       }

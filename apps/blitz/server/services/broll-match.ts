@@ -5,11 +5,11 @@ export const isUsable = (c: BrollClip) => Boolean(c.fileUrl) && USABLE_RIGHTS.in
 
 const words = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
 
-/** Best usable library clip for a footage query (tag/title word overlap), or null. */
-export function matchClip(clips: BrollClip[], query: string, variant = 0): BrollClip | null {
+/** Best usable Media Bank item of this kind for a footage query (tag/title word overlap), or null. */
+export function matchClip(clips: BrollClip[], query: string, variant = 0, kind: "video" | "image" = "video"): BrollClip | null {
   const q = words(query);
   const scored = clips
-    .filter(isUsable)
+    .filter((c) => isUsable(c) && (c.kind ?? "video") === kind)
     .map((c) => {
       const w = words(`${c.title} ${c.tags.join(" ")}`);
       let score = 0;

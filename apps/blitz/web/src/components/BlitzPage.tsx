@@ -134,6 +134,15 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
       <div className="stage">
         <section className="side-panel left">
           <AnimatePresence mode="wait">
+            {top && !reference && (
+              <motion.div key={`orig-${top.id}`} className="remixed-from original-panel" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}>
+                <div className="remixed-title">
+                  <Sparkles size={13} /> Create New
+                </div>
+                <p className="orig-angle">{top.angle ?? "Original idea"}</p>
+                <p className="ref-structure">Written from scratch for this content angle in your brand voice. Change angles and voice in Blitz preferences.</p>
+              </motion.div>
+            )}
             {reference && (
               <motion.div
                 key={reference.id}
@@ -152,6 +161,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
           {top ? (
             <motion.div className="chips" key={`chips-${top.id}`} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}>
               <span className="chip chip-muted">{formatLabel(top)}</span>
+              <span className={`chip ${top.origin === "original" ? "chip-info" : "chip-muted"}`}>{top.origin === "original" ? "Create New" : "Remix"}</span>
               <span className="chip chip-accent">{top.theme}</span>
             </motion.div>
           ) : (
@@ -245,16 +255,17 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
                   <div className="details-label">Goes out as</div>
                   <ul className="targets">
                     <li>
-                      {serviceIcon("tiktok", 18)} TikTok <em>{top.format === "video" ? "video" : "photo carousel"}</em>
+                      {serviceIcon("tiktok", 18)} TikTok <em>{top.format === "slideshow" ? "photo carousel" : "video"}</em>
                     </li>
                     <li>
-                      {serviceIcon("instagram", 18)} Instagram <em>{top.format === "video" ? "Reel" : "carousel"}</em>
+                      {serviceIcon("instagram", 18)} Instagram <em>{top.format === "slideshow" ? "carousel" : "Reel"}</em>
                     </li>
                     <li>
                       {serviceIcon("youtube", 18)} YouTube <em>Short</em>
                     </li>
                   </ul>
                   {top.video && <small className="credit-line">Footage: {top.video.credit}</small>}
+                  {top.format === "hook_demo" && !top.demoVideo && <small className="credit-line">No demo clip yet: upload one to the Media Bank and tag it "demo".</small>}
                 </div>
               </motion.div>
             )}

@@ -25,3 +25,14 @@ export async function ingestFile(mediaDir: string, id: string, data: Buffer): Pr
   }
   return { fileUrl: `/media/broll/${id}.mp4`, thumbnail: `/media/broll/${id}.jpg`, duration: Math.round(duration) };
 }
+
+/** Store an image in the Media Bank. */
+export async function ingestImage(mediaDir: string, id: string, data: Buffer, contentType: string): Promise<{ fileUrl: string; thumbnail: string }> {
+  const ext = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[contentType];
+  if (!ext) throw new Error("Use a JPG, PNG or WebP image");
+  const dir = path.join(mediaDir, "broll");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${id}.${ext}`), data);
+  const url = `/media/broll/${id}.${ext}`;
+  return { fileUrl: url, thumbnail: url };
+}

@@ -1,7 +1,8 @@
 import { config } from "./config.js";
 import { createApp } from "./app.js";
 
-const { app } = createApp(config);
+const { app, startBackgroundGeneration } = createApp(config);
+startBackgroundGeneration();
 
 app.listen(config.port, () => {
   const on = (b: unknown) => (b ? "on" : "off");

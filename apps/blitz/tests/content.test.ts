@@ -30,7 +30,7 @@ describe("template remix", () => {
   });
 
   it("builds a pending card with gradient slides when no AI or image keys are set", async () => {
-    const card = await buildCard(profile, BUILTIN_REFERENCES[0], new ContentAI(null), new ImageSearch(null, false), new VideoSearch(null, null));
+    const card = await buildCard({ profile, format: "slideshow", reference: BUILTIN_REFERENCES[0] }, { ai: new ContentAI(null), images: new ImageSearch(null, false), videos: new VideoSearch(null, null), library: [] });
     expect(card.status).toBe("pending");
     expect(card.generator).toBe("template");
     expect(card.slides.every((s) => s.imageUrl === null && s.background.length === 2)).toBe(true);

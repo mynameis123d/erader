@@ -1,5 +1,6 @@
 import type {
   BlitzCard,
+  BlitzPreferences,
   BrollClip,
   IntegrationsStatus,
   ProductProfile,
@@ -9,7 +10,18 @@ import type {
   ViralReference,
 } from "../../shared/types";
 
-export type { BrollClip };
+export type { BrollClip, BlitzPreferences };
+
+export interface ScrapeJob {
+  runId: string;
+  datasetId?: string;
+  hashtags: string[];
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  imported?: { references: number; clips: number };
+  error?: string;
+}
 export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishingSettings, PublishRecord, PublishRequest, ViralReference };
 export type RefMap = Record<string, ViralReference | undefined>;
 
@@ -50,12 +62,18 @@ export const api = {
       body: file,
       headers: { "Content-Type": file.type || "video/mp4" },
     }),
-  discoverBroll: (query?: string) => call<{ added: number; clips: BrollClip[] }>("/api/broll/discover", { method: "POST", json: { query } }),
+  discoverBroll: (query?: string) => call<{ job: ScrapeJob }>("/api/broll/discover", { method: "POST", json: { query } }),
+  scrapes: () => call<{ scrapes: ScrapeJob[]; apify: boolean }>("/api/scrapes"),
+  startScrape: (body: { hashtags?: string[]; runId?: string }) => call<{ job: ScrapeJob }>("/api/scrapes", { method: "POST", json: body }),
+  abortScrape: (runId: string) => call<{ run: unknown }>(`/api/scrapes/${runId}/abort`, { method: "POST" }),
+  preferences: () => call<BlitzPreferences>("/api/preferences"),
+  savePreferences: (p: BlitzPreferences) => call<BlitzPreferences>("/api/preferences", { method: "PUT", json: p }),
+  testIntegrations: () => call<Record<"buffer" | "apify" | "videos" | "claude", { ok: boolean; detail: string }>>("/api/integrations/test", { method: "POST" }),
   patchBroll: (id: string, patch: Partial<Pick<BrollClip, "title" | "tags" | "rights" | "rightsNote">>) =>
     call<{ clip: BrollClip }>(`/api/broll/${id}`, { method: "PATCH", json: patch }),
   fetchBroll: (id: string) => call<{ clip: BrollClip }>(`/api/broll/${id}/fetch`, { method: "POST" }),
   deleteBroll: (id: string) => call<{ ok: boolean }>(`/api/broll/${id}`, { method: "DELETE" }),
-  pullTrending: () => call<{ added: number; references: ViralReference[] }>("/api/references/trending", { method: "POST" }),
+  pullTrending: () => call<{ job: ScrapeJob }>("/api/references/trending", { method: "POST" }),
   patchCard: (id: string, patch: Partial<Pick<BlitzCard, "theme" | "slides" | "caption" | "hashtags">>) =>
     call<{ card: BlitzCard }>(`/api/cards/${id}`, { method: "PATCH", json: patch }),
   slideImage: (id: string, slideId: string, body: { query?: string; imageUrl?: string | null }) =>

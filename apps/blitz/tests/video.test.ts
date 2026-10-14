@@ -89,3 +89,61 @@ describe("B-roll library", () => {
     expect(matchClip(clips, "city night")).toBeNull();
   });
 });
+
+import { DEFAULT_PREFERENCES } from "../shared/types";
+import { buildCard, planBatch } from "../server/services/generator";
+import { ContentAI } from "../server/services/ai";
+import { ImageSearch } from "../server/services/images";
+import { ApifyClient } from "../server/services/trends";
+
+describe("Blitz planning", () => {
+  it("follows format weights and the remix percentage", () => {
+    const prefs = { ...DEFAULT_PREFERENCES, formatWeights: { slideshow: 0, video: 0, green_screen: 1, hook_demo: 0 }, remixPercent: 0 };
+    const plan = planBatch(prefs, 20);
+    expect(plan.every((p) => p.format === "green_screen" && p.origin === "original")).toBe(true);
+    const all = planBatch({ ...DEFAULT_PREFERENCES, remixPercent: 100 }, 200);
+    expect(all.every((p) => p.origin === "remix")).toBe(true);
+    expect(new Set(all.map((p) => p.format)).size).toBe(4);
+  });
+
+  const profile = { name: "Stride", oneLiner: "Sneakers", audience: "a", tone: "fun", keywords: ["sneakers"], benefits: ["all day comfort"], painPoints: ["sore feet"] } as never;
+  const deps = { ai: new ContentAI(null), images: new ImageSearch(null, false), videos: new VideoSearch(null, null), library: [] as BrollClip[] };
+
+  it("builds every format as an original idea without any keys", async () => {
+    for (const format of ["slideshow", "video", "green_screen", "hook_demo"] as const) {
+      const card = await buildCard({ profile, format, angle: "all day comfort" }, deps);
+      expect(card.format).toBe(format);
+      expect(card.origin).toBe("original");
+      expect(card.referenceId).toBe("original");
+      expect(card.slides[0].text.length).toBeGreaterThan(5);
+      if (format === "hook_demo" || format === "green_screen") expect(card.slides.length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("uses a cleared Media Bank demo clip for Hook + Demo", async () => {
+    const library: BrollClip[] = [{ id: "d1", kind: "video", source: "upload", title: "app demo screen recording", tags: ["demo"], rights: "owned", fileUrl: "/media/broll/d1.mp4", addedAt: "" }];
+    const card = await buildCard({ profile, format: "hook_demo", angle: "x" }, { ...deps, library });
+    expect(card.demoVideo?.url).toBe("/media/broll/d1.mp4");
+  });
+});
+
+describe("ApifyClient", () => {
+  it("starts a run, polls it and reads the dataset", async () => {
+    const calls: string[] = [];
+    let polls = 0;
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url.replace(/token=[^&]+/, "token=T")}`);
+      if (url.includes("/acts/")) return new Response(JSON.stringify({ data: { id: "run1", status: "RUNNING", defaultDatasetId: "ds1" } }));
+      if (url.includes("/actor-runs/run1")) return new Response(JSON.stringify({ data: { id: "run1", status: polls++ ? "SUCCEEDED" : "RUNNING", defaultDatasetId: "ds1" } }));
+      if (url.includes("/datasets/ds1/items")) return new Response(JSON.stringify([{ id: "9", text: "hello world post", playCount: 5 }]));
+      return new Response("{}", { status: 404 });
+    });
+    const client = new ApifyClient("T", "clockworks~tiktok-scraper", f as unknown as typeof fetch);
+    const run = await client.startRun(ApifyClient.hashtagInput(["#Running Shoes"]));
+    const { items } = await client.waitForItems(run.id, 5000, 1);
+    expect(items).toHaveLength(1);
+    expect(calls[0]).toBe("POST https://api.apify.com/v2/acts/clockworks~tiktok-scraper/runs?token=T");
+    expect(JSON.parse((f.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).hashtags).toEqual(["runningshoes"]);
+    expect(calls.at(-1)).toContain("/datasets/ds1/items?clean=true&format=json");
+  });
+});

@@ -1,8 +1,10 @@
 // In-browser stand-in for the Blitz API, used only by the preview build (`npm run build:preview`).
 // Same exports as ../api.ts. Nothing here talks to Buffer or any other service.
 import { moodFor, paintScene, type Ctx2D } from "../../../shared/scene";
+import { DEFAULT_PREFERENCES } from "../../../shared/types";
 import type {
   BlitzCard,
+  BlitzPreferences,
   BrollClip,
   BufferChannel,
   IntegrationsStatus,
@@ -17,7 +19,17 @@ import { sceneUrl } from "../scene-cache";
 import { templateRemix } from "../../../server/services/generator";
 import { BUILTIN_REFERENCES, WALL_OF_TEXT_REFERENCES } from "../../../server/services/library";
 
-export type { BrollClip };
+export type { BrollClip, BlitzPreferences };
+export interface ScrapeJob {
+  runId: string;
+  datasetId?: string;
+  hashtags: string[];
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+  imported?: { references: number; clips: number };
+  error?: string;
+}
 export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishingSettings, PublishRecord, PublishRequest, ViralReference };
 export type RefMap = Record<string, ViralReference | undefined>;
 export interface AppState {
@@ -82,10 +94,45 @@ const importedVideo: ViralReference = {
 
 const references: ViralReference[] = [importedVideo, imported, ...WALL_OF_TEXT_REFERENCES, ...BUILTIN_REFERENCES];
 
-type Sample = { ref: string; theme: string; slides: [string, string][]; caption: string; hashtags: string[]; why: string; video?: boolean };
+type Sample = {
+  ref: string;
+  theme: string;
+  slides: [string, string][];
+  caption: string;
+  hashtags: string[];
+  why: string;
+  video?: boolean;
+  format?: BlitzCard["format"];
+  angle?: string;
+};
 
 // Sample remixes in the style the Claude remixer produces, so the preview reads like the real feed.
 const SAMPLES: Sample[] = [
+  {
+    ref: "original",
+    format: "green_screen",
+    angle: "myths about running shoes",
+    theme: "The Shoe Rotation Myth",
+    slides: [
+      ["everyone says you need 3 pairs of shoes. i tested it for a month and honestly one good pair beat all of them", "closet full of sneakers"],
+      ["", "woman talking to camera"],
+    ],
+    caption: "Hot take: your shoe rotation is a storage problem, not a style choice.",
+    hashtags: ["sneakers", "hottake", "minimalism"],
+    why: "Create New for your \"myths\" angle. Green Screen myth-busting gets comments from people defending their rotation, which pushes reach.",
+  },
+  {
+    ref: "red-flags",
+    format: "hook_demo",
+    theme: "Blister-Free Day",
+    slides: [
+      ["my feet hurt every single day until this", "city street walking"],
+      ["so I tried Stride for a week", "product demo"],
+    ],
+    caption: "Week one: zero blisters. Week two: still zero.",
+    hashtags: ["sneakers", "review", "comfort"],
+    why: "Remixes the red-flags hook into a pain-then-proof Hook + Demo: the first 3 seconds name the pain, then the demo shows the fix.",
+  },
   {
     ref: "imported-advice-shoe-shuffle",
     video: true,
@@ -191,11 +238,17 @@ function nextCard(): BlitzCard {
   if (sampleIndex < SAMPLES.length) {
     const s = SAMPLES[sampleIndex++];
     const slides = toSlides(s.slides);
-    if (s.video) slides[0].textY = 0.55;
+    const format: BlitzCard["format"] = s.format ?? (s.video ? "video" : "slideshow");
+    if (format === "video") slides[0].textY = 0.55;
+    if (format === "green_screen") slides.splice(1), (slides[0].textY = 0.12);
+    if (format === "hook_demo") (slides[0].textY = 0.45), (slides[1].textY = 0.85);
     return {
       ...base,
-      format: s.video ? "video" : "slideshow",
+      format,
+      origin: s.ref === "original" ? "original" : "remix",
+      angle: s.angle,
       video: null,
+      demoVideo: null,
       theme: s.theme,
       referenceId: s.ref,
       slides,
@@ -210,6 +263,7 @@ function nextCard(): BlitzCard {
   const d = templateRemix(profile, ref);
   return {
     ...base,
+    origin: "remix",
     format: ref.format,
     theme: d.theme,
     referenceId: ref.id,
@@ -290,7 +344,23 @@ let broll: BrollClip[] = [
   { id: "tt-3", source: "tiktok", title: "outfit check: one pair, three looks", tags: ["sneakers", "ootd"], creator: "styledbyjo", sourceUrl: "https://www.tiktok.com/", views: 1310000, likes: 154000, rights: "cleared", rightsNote: "Approved by DM", fileUrl: null, addedAt: now },
 ];
 
+let prefs: BlitzPreferences = { ...structuredClone(DEFAULT_PREFERENCES), voice: "Dry, confident, a little funny. Talks like a friend who runs.", angles: ["myths about running shoes", "a day in the life", "customer wins"] };
+const scrapes: ScrapeJob[] = [];
+
 export const api = {
+  preferences: async () => clone(prefs),
+  savePreferences: async (p: BlitzPreferences) => (prefs = clone(p)),
+  testIntegrations: async () => ({
+    buffer: { ok: false, detail: "The preview can't call Buffer. Run the app with your keys to test" },
+    apify: { ok: false, detail: "The preview can't call Apify. Run the app with your keys to test" },
+    videos: { ok: false, detail: "The preview can't call Pexels" },
+    claude: { ok: false, detail: "The preview uses sample cards" },
+  }),
+  scrapes: async () => ({ scrapes: clone(scrapes), apify: true }),
+  startScrape: async (_b: { hashtags?: string[]; runId?: string }): Promise<{ job: ScrapeJob }> => {
+    throw new Error("Scraping runs on the server through Apify. It isn't available in the preview");
+  },
+  abortScrape: async (_id: string) => ({ run: null }),
   broll: async () => {
     // Painted stand-ins for thumbnails: the preview can't load TikTok covers.
     for (const c of broll) if (!c.thumbnail) c.thumbnail = sceneUrl({ id: c.id, imageQuery: `${c.title} ${c.tags.join(" ")}`, scene: null });
@@ -301,7 +371,7 @@ export const api = {
     broll.unshift(clip);
     return { clip: clone(clip) };
   },
-  discoverBroll: async (_q?: string): Promise<{ added: number; clips: BrollClip[] }> => {
+  discoverBroll: async (_q?: string): Promise<{ job: ScrapeJob }> => {
     throw new Error("TikTok search runs on the server with your Apify token. It isn't available in the preview");
   },
   patchBroll: async (id: string, patch: Partial<Pick<BrollClip, "title" | "tags" | "rights" | "rightsNote">>) => {
@@ -321,7 +391,7 @@ export const api = {
   },
   publishingSettings: async () => clone(publishing),
   savePublishingSettings: async (s: PublishingSettings) => (publishing = clone(s)),
-  pullTrending: async (): Promise<{ added: number; references: ViralReference[] }> => {
+  pullTrending: async (): Promise<{ job: ScrapeJob }> => {
     throw new Error("Pulling trending TikToks needs APIFY_TOKEN on the server. It isn't available in the preview");
   },
   state: async (): Promise<AppState> => ({

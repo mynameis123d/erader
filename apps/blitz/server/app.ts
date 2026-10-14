@@ -6,16 +6,16 @@ import { z } from "zod";
 import { MOODS, type Mood } from "../shared/scene.js";
 import type { BlitzCard, BufferChannel, IntegrationsStatus, ProductProfile, ViralReference } from "../shared/types.js";
 import { config as defaultConfig } from "./config.js";
-import { Db } from "./db.js";
+import { Db, type ScrapeJob } from "./db.js";
 import { ContentAI } from "./services/ai.js";
 import { BufferClient, BufferError } from "./services/buffer.js";
-import { buildCard } from "./services/generator.js";
+import { buildCard, planBatch, referencesFor } from "./services/generator.js";
 import { ImageSearch } from "./services/images.js";
 import { allReferences, pickReferences } from "./services/library.js";
 import { publishCard } from "./services/publisher.js";
 import { renderCard } from "./services/render.js";
-import { ApifyClips, TrendScout } from "./services/trends.js";
-import { clipToVideo, ingestFile, isUsable, matchClip } from "./services/broll.js";
+import { ApifyClient, RUN_DONE, toBrollCandidates, toReferences } from "./services/trends.js";
+import { clipToVideo, ingestFile, ingestImage, isUsable, matchClip } from "./services/broll.js";
 import { VideoSearch } from "./services/videos.js";
 import { fetchPage, heuristicProfile, pageForPrompt } from "./services/website.js";
 
@@ -95,8 +95,7 @@ export function createApp(cfg: Config = defaultConfig) {
   const ai = new ContentAI(cfg.anthropicApiKey);
   const images = new ImageSearch(cfg.pexelsApiKey, cfg.openverse);
   const videos = new VideoSearch(cfg.pexelsApiKey, cfg.pixabayApiKey);
-  const trends = new TrendScout(cfg.apifyToken, cfg.apifyTikTokActor);
-  const apifyClips = new ApifyClips(cfg.apifyToken, cfg.apifyTikTokActor);
+  const apify = new ApifyClient(cfg.apifyToken, cfg.apifyTikTokActor);
   const buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
 
   let channelCache: { at: number; orgId: string; channels: BufferChannel[] } | null = null;
@@ -159,19 +158,24 @@ export function createApp(cfg: Config = defaultConfig) {
   };
 
   let generating: Promise<BlitzCard[]> | null = null;
+  /** Plan formats by weight, remix vs Create New by the remix %, then write each card. */
   async function generate(count: number): Promise<BlitzCard[]> {
     if (generating) return generating;
     const profile = requireProfile();
+    const prefs = db.state.preferences;
     const usage = new Map<string, number>();
     for (const c of db.state.cards) usage.set(c.referenceId, (usage.get(c.referenceId) ?? 0) + 1);
     const all = references();
-    // With a video source configured, half of each batch is "Wall of Text" video posts.
-    const videoCount = videos.enabled ? Math.ceil(count / 2) : Math.floor(count / 3);
-    const refs = [
-      ...pickReferences(all.filter((r) => r.format === "video"), usage, videoCount),
-      ...pickReferences(all.filter((r) => r.format !== "video"), usage, count - videoCount),
-    ];
-    generating = Promise.all(refs.map((r) => buildCard(profile, r, ai, images, videos, db.state.broll)))
+    const angles = prefs.angles.length ? prefs.angles : [...profile.benefits, ...profile.painPoints.map((p) => `fixing "${p}"`)];
+    const deps = { ai, images, videos, library: db.state.broll };
+    const specs = planBatch(prefs, count).map((plan, i) => {
+      const fits = plan.origin === "remix" ? referencesFor(plan.format, all) : [];
+      const reference = fits.length ? pickReferences(fits, usage, 1)[0] : undefined;
+      if (reference) usage.set(reference.id, (usage.get(reference.id) ?? 0) + 1);
+      const angle = reference ? undefined : angles.length ? angles[(i + db.state.cards.length) % angles.length] : profile.oneLiner;
+      return { profile, format: plan.format, reference, angle, voice: prefs.voice || profile.tone };
+    });
+    generating = Promise.all(specs.map((spec) => buildCard(spec, deps)))
       .then((cards) => {
         db.update((d) => d.cards.push(...cards));
         return cards;
@@ -182,6 +186,68 @@ export function createApp(cfg: Config = defaultConfig) {
     return generating;
   }
 
+  /** Background generation: keep the feed topped up to the target without the user waiting. */
+  function startBackgroundGeneration(intervalMs = 45_000) {
+    const tick = () => {
+      const pending = db.state.cards.filter((c) => c.status === "pending").length;
+      const target = db.state.preferences.feedTarget;
+      if (!db.state.profile || generating || pending >= target) return;
+      generate(Math.min(3, target - pending)).catch((e: Error) => console.warn("[blitz] background generation failed:", e.message));
+    };
+    const timer = setInterval(tick, intervalMs);
+    tick();
+    return () => clearInterval(timer);
+  }
+
+  // ---------- Apify scrapes ----------
+  async function importItems(items: Awaited<ReturnType<typeof apify.datasetItems>>, hashtags: string[]) {
+    const refs = toReferences(items, 25);
+    const clips = toBrollCandidates(items, hashtags);
+    const knownRefs = new Set(db.state.references.map((r) => r.id));
+    const knownClips = new Set(db.state.broll.map((c) => c.id));
+    const freshRefs = refs.filter((r) => !knownRefs.has(r.id));
+    const freshClips = clips.filter((c) => !knownClips.has(c.id));
+    db.update((d) => {
+      d.references.unshift(...freshRefs);
+      d.broll.push(...freshClips);
+    });
+    return { references: freshRefs.length, clips: freshClips.length };
+  }
+
+  /** Wait for a run in the background, then import its posts. */
+  function watchScrape(job: ScrapeJob) {
+    apify
+      .waitForItems(job.runId)
+      .then(async ({ run, items }) => {
+        const imported = await importItems(items, job.hashtags);
+        db.update(() => Object.assign(job, { status: run.status, datasetId: run.defaultDatasetId, finishedAt: run.finishedAt ?? new Date().toISOString(), imported }));
+      })
+      .catch((e: Error) => db.update(() => Object.assign(job, { status: "FAILED", error: e.message, finishedAt: new Date().toISOString() })));
+  }
+
+  async function startScrape(hashtags: string[]): Promise<ScrapeJob> {
+    const run = await apify.startRun(ApifyClient.hashtagInput(hashtags));
+    const job: ScrapeJob = { runId: run.id, datasetId: run.defaultDatasetId, hashtags, status: run.status, startedAt: run.startedAt ?? new Date().toISOString() };
+    db.update((d) => d.scrapes.unshift(job));
+    watchScrape(job);
+    return job;
+  }
+
+  async function importRun(runId: string): Promise<ScrapeJob> {
+    const run = await apify.getRun(runId);
+    const hashtags = requireProfile().keywords.slice(0, 5);
+    const job: ScrapeJob = { runId: run.id, datasetId: run.defaultDatasetId, hashtags, status: run.status, startedAt: run.startedAt ?? new Date().toISOString() };
+    db.update((d) => {
+      d.scrapes = d.scrapes.filter((s) => s.runId !== run.id);
+      d.scrapes.unshift(job);
+    });
+    watchScrape(job);
+    return job;
+  }
+
+  // Resume watching runs that were still going when the server stopped.
+  if (apify.enabled) for (const job of db.state.scrapes) if (!RUN_DONE.has(job.status) && !job.imported) watchScrape(job);
+
   const app = express();
   app.use(express.json({ limit: "2mb" }));
   app.use("/media", express.static(cfg.mediaDir, { maxAge: "1h" }));
@@ -189,7 +255,7 @@ export function createApp(cfg: Config = defaultConfig) {
   app.get("/api/state", (_req, res) => {
     res.json({
       profile: db.state.profile,
-      capabilities: { claude: ai.enabled, pexels: Boolean(cfg.pexelsApiKey), photos: images.source, videos: videos.source, apify: trends.enabled, buffer: Boolean(buffer) },
+      capabilities: { claude: ai.enabled, pexels: Boolean(cfg.pexelsApiKey), photos: images.source, videos: videos.source, apify: apify.enabled, buffer: Boolean(buffer) },
       counts: countByStatus(db.state.cards),
     });
   });
@@ -340,20 +406,23 @@ export function createApp(cfg: Config = defaultConfig) {
     return c;
   };
 
-  app.get("/api/broll", (_req, res) => res.json({ clips: db.state.broll, apify: apifyClips.enabled }));
+  app.get("/api/broll", (_req, res) => res.json({ clips: db.state.broll, apify: apify.enabled }));
 
-  app.post("/api/broll/upload", express.raw({ type: ["video/*"], limit: "300mb" }), async (req, res) => {
-    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new HttpError(400, "Upload an MP4 or MOV video");
+  app.post("/api/broll/upload", express.raw({ type: ["video/*", "image/*"], limit: "300mb" }), async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new HttpError(400, "Upload a video (MP4, MOV) or an image (JPG, PNG, WebP)");
+    const isImage = String(req.headers["content-type"] ?? "").startsWith("image/");
     const id = `up-${randomUUID().slice(0, 8)}`;
     const title = String(req.query.title ?? "Uploaded clip").slice(0, 90);
     const tags = String(req.query.tags ?? "")
       .split(/[,\s]+/)
       .map((t) => t.replace(/^#/, "").toLowerCase())
       .filter(Boolean);
-    const file = await ingestFile(cfg.mediaDir, id, req.body).catch((e: Error) => {
-      throw new HttpError(422, e.message);
-    });
-    const clip = { id, source: "upload" as const, title, tags, rights: "owned" as const, addedAt: new Date().toISOString(), ...file };
+    const file = await (isImage ? ingestImage(cfg.mediaDir, id, req.body, String(req.headers["content-type"])) : ingestFile(cfg.mediaDir, id, req.body)).catch(
+      (e: Error) => {
+        throw new HttpError(422, e.message);
+      },
+    );
+    const clip = { id, kind: isImage ? ("image" as const) : ("video" as const), source: "upload" as const, title, tags, rights: "owned" as const, addedAt: new Date().toISOString(), ...file };
     db.update((d) => d.broll.unshift(clip));
     res.status(201).json({ clip });
   });
@@ -361,11 +430,7 @@ export function createApp(cfg: Config = defaultConfig) {
   app.post("/api/broll/discover", async (req, res) => {
     const { query } = z.object({ query: z.string().optional() }).parse(req.body ?? {});
     const tags = query?.trim() ? query.split(/[,\s]+/) : requireProfile().keywords;
-    const found = await apifyClips.discover(tags);
-    const known = new Set(db.state.broll.map((c) => c.id));
-    const fresh = found.filter((c) => !known.has(c.id));
-    db.update((d) => d.broll.push(...fresh));
-    res.json({ added: fresh.length, clips: fresh });
+    res.status(202).json({ job: await startScrape(tags) });
   });
 
   app.patch("/api/broll/:id", (req, res) => {
@@ -389,7 +454,7 @@ export function createApp(cfg: Config = defaultConfig) {
     const clip = requireClip(req.params.id);
     if (clip.source !== "tiktok" || !clip.sourceUrl) throw new HttpError(400, "Only TikTok clips can be fetched");
     if (clip.rights !== "cleared") throw new HttpError(403, "Mark this clip as cleared (creator permission) before downloading it");
-    const media = await apifyClips.mediaUrl(clip.sourceUrl);
+    const media = await apify.mediaUrl(clip.sourceUrl);
     const dl = await fetch(media, { signal: AbortSignal.timeout(120000) });
     if (!dl.ok) throw new HttpError(502, `Download failed (HTTP ${dl.status})`);
     const file = await ingestFile(cfg.mediaDir, clip.id, Buffer.from(await dl.arrayBuffer()));
@@ -400,7 +465,8 @@ export function createApp(cfg: Config = defaultConfig) {
   app.delete("/api/broll/:id", (req, res) => {
     const clip = requireClip(req.params.id);
     db.update((d) => (d.broll = d.broll.filter((c) => c !== clip)));
-    for (const ext of ["mp4", "jpg"]) fs.rmSync(path.join(cfg.mediaDir, "broll", `${clip.id}.${ext}`), { force: true });
+    for (const url of [clip.fileUrl, clip.thumbnail])
+      if (url?.startsWith("/media/broll/")) fs.rmSync(path.join(cfg.mediaDir, url.slice("/media/".length)), { force: true });
     res.json({ ok: true, usable: isUsable(clip) });
   });
 
@@ -420,12 +486,75 @@ export function createApp(cfg: Config = defaultConfig) {
   });
 
   app.post("/api/references/trending", async (_req, res) => {
-    const profile = requireProfile();
-    const found = await trends.trending(profile.keywords);
-    const known = new Set(db.state.references.map((r) => r.id));
-    const fresh = found.filter((r) => !known.has(r.id));
-    db.update((d) => d.references.unshift(...fresh));
-    res.json({ added: fresh.length, references: fresh });
+    res.status(202).json({ job: await startScrape(requireProfile().keywords) });
+  });
+
+  // ---------- scrapes (Apify runs) ----------
+  app.get("/api/scrapes", (_req, res) => res.json({ scrapes: db.state.scrapes.slice(0, 30), apify: apify.enabled }));
+
+  app.post("/api/scrapes", async (req, res) => {
+    const body = z.object({ hashtags: z.array(z.string()).optional(), runId: z.string().regex(/^[A-Za-z0-9]{8,32}$/).optional() }).parse(req.body ?? {});
+    if (body.runId) return res.status(202).json({ job: await importRun(body.runId) });
+    const tags = body.hashtags?.length ? body.hashtags : requireProfile().keywords;
+    res.status(202).json({ job: await startScrape(tags) });
+  });
+
+  app.post("/api/scrapes/:runId/abort", async (req, res) => {
+    const run = await apify.abortRun(req.params.runId);
+    db.update((d) => {
+      const job = d.scrapes.find((s) => s.runId === run.id);
+      if (job) job.status = run.status;
+    });
+    res.json({ run });
+  });
+
+  // ---------- Blitz preferences ----------
+  app.get("/api/preferences", (_req, res) => res.json(db.state.preferences));
+
+  app.put("/api/preferences", (req, res) => {
+    const weight = z.number().min(0).max(10);
+    const body = z
+      .object({
+        voice: z.string().max(1000),
+        angles: z.array(z.string().max(120)).max(20),
+        formatWeights: z.object({ slideshow: weight, video: weight, green_screen: weight, hook_demo: weight }),
+        remixPercent: z.number().min(0).max(100),
+        feedTarget: z.number().int().min(1).max(30),
+      })
+      .parse(req.body);
+    db.update((d) => (d.preferences = body));
+    res.json(db.state.preferences);
+  });
+
+  // ---------- live connection test ----------
+  app.post("/api/integrations/test", async (_req, res) => {
+    const check = async (fn: () => Promise<string>) => {
+      try {
+        return { ok: true, detail: await fn() };
+      } catch (e) {
+        return { ok: false, detail: (e as Error).message };
+      }
+    };
+    const [bufferResult, apifyResult, pexelsResult] = await Promise.all([
+      check(async () => {
+        if (!buffer) throw new Error("BUFFER_API_KEY is not set");
+        const { channels } = await bufferChannels(true);
+        const main = channels.filter((c) => ["tiktok", "instagram", "youtube"].includes(c.service));
+        return `Connected. ${channels.length} channel(s): ${channels.map((c) => `${c.service} ${c.displayName ?? c.name}`).join(", ") || "none"}${main.length ? "" : ". Connect TikTok, Instagram and YouTube in Buffer"}`;
+      }),
+      check(async () => {
+        if (!apify.enabled) throw new Error("APIFY_TOKEN is not set");
+        const me = await apify.me();
+        return `Connected as ${me.username}${me.plan ? ` (${me.plan} plan)` : ""}. Scraper: ${apify.actor}`;
+      }),
+      check(async () => {
+        if (!videos.enabled) throw new Error("PEXELS_API_KEY / PIXABAY_API_KEY not set");
+        const v = await videos.find("city street walking");
+        if (!v) throw new Error("Search returned nothing (check the key)");
+        return `Working. Sample clip: ${v.credit}`;
+      }),
+    ]);
+    res.json({ buffer: bufferResult, apify: apifyResult, videos: pexelsResult, claude: { ok: ai.enabled, detail: ai.enabled ? "Key set" : "ANTHROPIC_API_KEY is not set" } });
   });
 
   app.get("/api/integrations", async (req, res) => {
@@ -436,7 +565,7 @@ export function createApp(cfg: Config = defaultConfig) {
       pexels: Boolean(cfg.pexelsApiKey),
       photos: images.source,
       videos: videos.source,
-      apify: trends.enabled,
+      apify: apify.enabled,
     };
     if (buffer) {
       try {
@@ -462,7 +591,7 @@ export function createApp(cfg: Config = defaultConfig) {
     res.status(500).json({ error: (err as Error).message ?? "Internal error" });
   });
 
-  return { app, db };
+  return { app, db, startBackgroundGeneration };
 }
 
 function countByStatus(cards: BlitzCard[]) {

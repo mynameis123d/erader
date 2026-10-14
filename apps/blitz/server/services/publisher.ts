@@ -17,7 +17,7 @@ export function postText(card: BlitzCard): string {
 
 /** Which media a channel gets: YouTube Shorts needs video; TikTok/Instagram default to a photo carousel. */
 export function planMedia(service: string, asVideo: boolean, format: BlitzCard["format"] = "slideshow"): { kind: "images" | "video"; aspect: Aspect } {
-  if (format === "video" || service === "youtube") return { kind: "video", aspect: "9:16" };
+  if (format !== "slideshow" || service === "youtube") return { kind: "video", aspect: "9:16" };
   if (service === "instagram") return asVideo ? { kind: "video", aspect: "9:16" } : { kind: "images", aspect: "4:5" };
   return { kind: asVideo ? "video" : "images", aspect: "9:16" };
 }

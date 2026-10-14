@@ -2,7 +2,41 @@
 
 import type { Mood } from "./scene";
 
-export type ContentFormat = "slideshow" | "video";
+/**
+ * Post formats. "video" is Wall of Text (one clip, a block of text over it).
+ * "green_screen": a background image (screenshot, product shot, post) on top, a creator clip below, text on top.
+ * "hook_demo": a short hook clip with a hook line, then a product demo clip from the Media Bank.
+ */
+export type ContentFormat = "slideshow" | "video" | "green_screen" | "hook_demo";
+
+export const FORMAT_LABELS: Record<ContentFormat, string> = {
+  slideshow: "Slideshow",
+  video: "Wall of Text",
+  green_screen: "Green Screen",
+  hook_demo: "Hook + Demo",
+};
+
+/** How Blitz decides what to write. Mirrors Fastlane's voice / angles / format weights / remix %. */
+export interface BlitzPreferences {
+  /** How posts should sound, in the user's words. */
+  voice: string;
+  /** Recurring themes to write about, e.g. "behind the scenes", "customer wins". */
+  angles: string[];
+  /** Relative weight of each format (0 = never). */
+  formatWeights: Record<ContentFormat, number>;
+  /** Share of cards that remix a trending post; the rest are original ("Create New"). 0-100. */
+  remixPercent: number;
+  /** Keep at least this many cards waiting in the feed (generated in the background). */
+  feedTarget: number;
+}
+
+export const DEFAULT_PREFERENCES: BlitzPreferences = {
+  voice: "",
+  angles: [],
+  formatWeights: { slideshow: 3, video: 3, green_screen: 1, hook_demo: 1 },
+  remixPercent: 60,
+  feedTarget: 8,
+};
 
 /** What Fastlane calls the brand context: built from the user's website. */
 export interface ProductProfile {
@@ -81,8 +115,14 @@ export interface BlitzCard {
   referenceId: string;
   /** Slideshow: one entry per slide. Video ("Wall of Text"): exactly one entry, the text over the clip. */
   slides: Slide[];
-  /** Background clip for video posts. */
+  /** Background clip for video posts (Wall of Text), the creator clip (Green Screen) or the hook clip (Hook + Demo). */
   video?: CardVideo | null;
+  /** Hook + Demo: the product demo clip that follows the hook. */
+  demoVideo?: CardVideo | null;
+  /** "remix" adapts a trending post; "original" is a Create New idea. */
+  origin?: "remix" | "original";
+  /** The content angle an original idea was written for. */
+  angle?: string;
   caption: string;
   hashtags: string[];
   why: string;
@@ -158,6 +198,8 @@ export type ClipRights = "owned" | "licensed" | "needs_permission" | "requested"
 
 export interface BrollClip {
   id: string;
+  /** Media Bank items can be clips or still images. Missing = video (older data). */
+  kind?: "video" | "image";
   source: "tiktok" | "upload";
   title: string;
   tags: string[];

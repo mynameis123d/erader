@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Film, LayoutGrid, Plug, Settings2, Shuffle, Zap } from "lucide-react";
+import { Film, LayoutGrid, Plug, Settings2, Shuffle, SlidersHorizontal, Zap } from "lucide-react";
 import type { ProductProfile } from "../api";
 import type { Section } from "./SettingsModal";
 
@@ -8,7 +8,7 @@ export type Page = "blitz" | "content" | "broll";
 const NAV: { id: Page; label: string; icon: typeof Zap }[] = [
   { id: "blitz", label: "Blitz", icon: Zap },
   { id: "content", label: "Content", icon: LayoutGrid },
-  { id: "broll", label: "B-roll", icon: Film },
+  { id: "broll", label: "Media Bank", icon: Film },
 ];
 
 export function Sidebar({
@@ -64,6 +64,10 @@ export function Sidebar({
         <button className="nav-item" onClick={() => onSettings("integrations")}>
           <Plug size={17} />
           <span>Integrations</span>
+        </button>
+        <button className="nav-item" onClick={() => onSettings("blitz")}>
+          <SlidersHorizontal size={17} />
+          <span>Blitz preferences</span>
         </button>
         <button className="nav-item" onClick={() => onSettings("publishing")}>
           <Zap size={17} />

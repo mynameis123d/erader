@@ -1,11 +1,13 @@
 import { motion } from "framer-motion";
-import { Plug, Shuffle, Tag, Zap } from "lucide-react";
+import { CheckCircle2, Loader2, Plug, Shuffle, SlidersHorizontal, Tag, X, XCircle, Zap } from "lucide-react";
+import { FORMAT_LABELS, type ContentFormat } from "../../../shared/types";
+import { type BlitzPreferences } from "../api";
 import { useEffect, useState } from "react";
 import { api, DEMO, fmtCount, type IntegrationsStatus, type ProductProfile, type PublishingSettings, type ViralReference } from "../api";
 import { ProfileForm } from "./ProfileForm";
 import { serviceIcon, serviceLabel } from "./icons";
 
-export type Section = "integrations" | "publishing" | "brand" | "remix";
+export type Section = "integrations" | "blitz" | "publishing" | "brand" | "remix";
 
 const BUFFER_APP = "https://publish.buffer.com";
 const PLATFORMS: { service: string; note?: string }[] = [
@@ -34,6 +36,9 @@ export function SettingsModal({
           <button className={section === "integrations" ? "on" : ""} onClick={() => setSection("integrations")}>
             <Plug size={16} /> Integrations
           </button>
+          <button className={section === "blitz" ? "on" : ""} onClick={() => setSection("blitz")}>
+            <SlidersHorizontal size={16} /> Blitz preferences
+          </button>
           <button className={section === "publishing" ? "on" : ""} onClick={() => setSection("publishing")}>
             <Zap size={16} /> One-click publishing
           </button>
@@ -50,6 +55,7 @@ export function SettingsModal({
           </button>
           {section === "integrations" && <Integrations />}
           {section === "publishing" && <Publishing />}
+          {section === "blitz" && <BlitzPrefs />}
           {section === "brand" && (
             <>
               <h2>Brand profile</h2>
@@ -82,6 +88,7 @@ function Integrations() {
   return (
     <>
       <h2>Integrations</h2>
+      <ConnectionTest />
       <p className="muted">Publishing goes through Buffer. Connect your social accounts in Buffer and they show up here.</p>
       {DEMO && <div className="note">Preview: these are sample channels. In the real app this list comes live from your Buffer account.</div>}
 
@@ -281,12 +288,11 @@ function RemixLibrary() {
   }, []);
 
   const pull = async () => {
-    setPulling("Pulling trending TikToks through Apify. This can take a minute or two…");
+    setPulling("Starting an Apify run…");
     setError(null);
     try {
-      const { added, references } = await api.pullTrending();
-      setRefs((r) => [...references, ...r]);
-      setPulling(`Added ${added} trending post${added === 1 ? "" : "s"}. Blitz remixes them first.`);
+      const { job } = await api.pullTrending();
+      setPulling(`Apify run ${job.runId} started. Trending posts appear here and in the Media Bank when it finishes (usually 1-3 minutes).`);
     } catch (e) {
       setError((e as Error).message);
       setPulling(null);
@@ -366,6 +372,189 @@ function RemixLibrary() {
           </li>
         ))}
       </ul>
+    </>
+  );
+}
+
+function ConnectionTest() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.testIntegrations>> | null>(null);
+  const run = async () => {
+    setBusy(true);
+    try {
+      setResult(await api.testIntegrations());
+    } catch (e) {
+      setResult({ buffer: { ok: false, detail: (e as Error).message }, apify: { ok: false, detail: "" }, videos: { ok: false, detail: "" }, claude: { ok: false, detail: "" } });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const rows: [keyof NonNullable<typeof result>, string][] = [
+    ["buffer", "Buffer"],
+    ["apify", "Apify"],
+    ["videos", "Videos"],
+    ["claude", "Claude"],
+  ];
+  return (
+    <div className="int-card">
+      <div className="int-head">
+        <div>
+          <b>Test connections</b>
+          <small>Calls Buffer, Apify and the video source with your keys and reports what comes back.</small>
+        </div>
+        <div className="int-right">
+          <button className="btn-primary" onClick={run} disabled={busy}>
+            {busy ? <Loader2 size={15} className="spin" /> : <Plug size={15} />} {busy ? "Testing…" : "Run test"}
+          </button>
+        </div>
+      </div>
+      {result && (
+        <div className="test-results">
+          {rows.map(([k, label]) => (
+            <div key={k} className={`test-row ${result[k].ok ? "ok" : "fail"}`}>
+              {result[k].ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+              <b>{label}</b>
+              <span>{result[k].detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const FORMATS: ContentFormat[] = ["slideshow", "video", "green_screen", "hook_demo"];
+const FORMAT_HINTS: Record<ContentFormat, string> = {
+  slideshow: "Photo slides with caption pills",
+  video: "One clip, a block of text over it",
+  green_screen: "Image on top, creator clip below",
+  hook_demo: "Hook clip, then your product demo",
+};
+
+function BlitzPrefs() {
+  const [prefs, setPrefs] = useState<BlitzPreferences | null>(null);
+  const [angle, setAngle] = useState("");
+  const [saved, setSaved] = useState<"idle" | "saving" | "saved">("idle");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.preferences().then(setPrefs).catch((e) => setError(e.message));
+  }, []);
+
+  const save = async (next: BlitzPreferences) => {
+    setPrefs(next);
+    setSaved("saving");
+    try {
+      setPrefs(await api.savePreferences(next));
+      setSaved("saved");
+    } catch (e) {
+      setError((e as Error).message);
+      setSaved("idle");
+    }
+  };
+
+  if (!prefs) return <p className="muted">{error ?? "Loading…"}</p>;
+  const totalWeight = FORMATS.reduce((a, f) => a + prefs.formatWeights[f], 0) || 1;
+  const addAngle = () => {
+    const a = angle.trim();
+    if (a && !prefs.angles.includes(a)) void save({ ...prefs, angles: [...prefs.angles, a] });
+    setAngle("");
+  };
+
+  return (
+    <>
+      <h2>Blitz preferences</h2>
+      <p className="muted">Blitz writes new cards in the background from your brand, these preferences and what's trending. Changes apply to the next cards it writes.</p>
+
+      <div className="int-card">
+        <label>
+          Brand voice
+          <textarea
+            rows={3}
+            placeholder="e.g. Dry humour, short sentences, talks like a runner friend, never salesy"
+            value={prefs.voice}
+            onChange={(e) => setPrefs({ ...prefs, voice: e.target.value })}
+            onBlur={() => save(prefs)}
+          />
+        </label>
+      </div>
+
+      <div className="int-card">
+        <b>Content angles</b>
+        <p className="muted small">Themes for Create New ideas. Blitz rotates through them.</p>
+        <div className="chip-input">
+          {prefs.angles.map((a) => (
+            <span key={a}>
+              {a}
+              <button aria-label={`Remove ${a}`} onClick={() => save({ ...prefs, angles: prefs.angles.filter((x) => x !== a) })}>
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          <input
+            placeholder={prefs.angles.length ? "Add another…" : "e.g. behind the scenes, customer wins, myths in our niche"}
+            value={angle}
+            onChange={(e) => setAngle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addAngle();
+              }
+            }}
+            onBlur={addAngle}
+          />
+        </div>
+      </div>
+
+      <div className="int-card">
+        <b>Remix vs Create New</b>
+        <p className="muted small">Remix adapts trending posts to your niche. Create New writes original ideas from your angles.</p>
+        <input type="range" min={0} max={100} step={5} value={prefs.remixPercent} onChange={(e) => setPrefs({ ...prefs, remixPercent: Number(e.target.value) })} onPointerUp={() => save(prefs)} onKeyUp={() => save(prefs)} />
+        <div className="split-bar">
+          <span style={{ width: `${prefs.remixPercent}%` }} />
+          <span style={{ width: `${100 - prefs.remixPercent}%` }} />
+        </div>
+        <div className="split-legend">
+          <span>Remix {prefs.remixPercent}%</span>
+          <span>Create New {100 - prefs.remixPercent}%</span>
+        </div>
+      </div>
+
+      <div className="int-card">
+        <b>Formats</b>
+        <p className="muted small">How often each format appears in your feed. 0 turns a format off.</p>
+        <div className="weights">
+          {FORMATS.map((f) => (
+            <div className="weight-row" key={f}>
+              <span>
+                {FORMAT_LABELS[f]}
+                <small className="muted" style={{ display: "block", fontWeight: 400 }}>
+                  {FORMAT_HINTS[f]}
+                </small>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={5}
+                value={prefs.formatWeights[f]}
+                onChange={(e) => setPrefs({ ...prefs, formatWeights: { ...prefs.formatWeights, [f]: Number(e.target.value) } })}
+                onPointerUp={() => save(prefs)}
+                onKeyUp={() => save(prefs)}
+              />
+              <output>{Math.round((prefs.formatWeights[f] / totalWeight) * 100)}%</output>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="int-card">
+        <label>
+          Cards to keep ready
+          <input type="number" min={1} max={30} value={prefs.feedTarget} onChange={(e) => setPrefs({ ...prefs, feedTarget: Number(e.target.value) || 1 })} onBlur={() => save(prefs)} style={{ maxWidth: 120 }} />
+        </label>
+        <p className="muted small">Blitz writes new cards in the background until this many are waiting.</p>
+      </div>
+      {error && <div className="banner-error">{error}</div>}
+      {saved !== "idle" && <p className="muted small">{saved === "saving" ? "Saving…" : "Saved."}</p>}
     </>
   );
 }
