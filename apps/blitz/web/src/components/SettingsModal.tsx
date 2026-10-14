@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, fmtCount, type IntegrationsStatus, type ProductProfile, type ViralReference } from "../api";
+import { api, DEMO, fmtCount, type IntegrationsStatus, type ProductProfile, type PublishingSettings, type ViralReference } from "../api";
 import { ProfileForm } from "./ProfileForm";
 import { serviceIcon, serviceLabel } from "./icons";
 
-type Section = "integrations" | "brand" | "remix";
+type Section = "integrations" | "publishing" | "brand" | "remix";
 
 const BUFFER_APP = "https://publish.buffer.com";
 const PLATFORMS: { service: string; note?: string }[] = [
@@ -32,6 +32,9 @@ export function SettingsModal({
           <button className={section === "integrations" ? "on" : ""} onClick={() => setSection("integrations")}>
             <span aria-hidden>🔌</span> Integrations
           </button>
+          <button className={section === "publishing" ? "on" : ""} onClick={() => setSection("publishing")}>
+            <span aria-hidden>⚡</span> One-click publishing
+          </button>
           <button className={section === "brand" ? "on" : ""} onClick={() => setSection("brand")}>
             <span aria-hidden>🏷️</span> Brand profile
           </button>
@@ -44,6 +47,7 @@ export function SettingsModal({
             ×
           </button>
           {section === "integrations" && <Integrations />}
+          {section === "publishing" && <Publishing />}
           {section === "brand" && (
             <>
               <h2>Brand profile</h2>
@@ -77,6 +81,7 @@ function Integrations() {
     <>
       <h2>Integrations</h2>
       <p className="muted">Publishing goes through Buffer. Connect your social accounts in Buffer and they show up here.</p>
+      {DEMO && <div className="note">Preview: these are sample channels. In the real app this list comes live from your Buffer account.</div>}
 
       <div className="int-card">
         <div className="int-head">
@@ -148,12 +153,118 @@ function Integrations() {
       )}
 
       <div className="int-card">
+        <b>Content sources</b>
+        <ul className="plain">
+          <li>
+            Background videos:{" "}
+            {status?.videos === "pexels" ? "Pexels" : status?.videos === "pixabay" ? "Pixabay" : "off. Add PEXELS_API_KEY (free) for real footage behind Wall of Text posts"}
+          </li>
+          <li>Trending TikToks (Apify): {status?.apify ? "on" : "off. Add APIFY_TOKEN to pull real viral posts to remix"}</li>
+        </ul>
+      </div>
+
+      <div className="int-card">
         <b>Content AI</b>
         <ul className="plain">
           <li>Claude (site analysis & remixes): {status?.claude ? "on" : "off (set ANTHROPIC_API_KEY)"}</li>
-          <li>Pexels stock photos: {status?.pexels ? "on" : "off (set PEXELS_API_KEY)"}</li>
+          <li>
+            Slide photos:{" "}
+            {status?.photos === "pexels"
+              ? "Pexels"
+              : status?.photos === "openverse"
+                ? "Openverse public-domain photos (set PEXELS_API_KEY for better ones)"
+                : "painted scenes only"}
+            . Painted scenes fill in whenever a photo is missing.
+          </li>
         </ul>
       </div>
+    </>
+  );
+}
+
+const MAIN = ["tiktok", "instagram", "youtube"];
+
+function Publishing() {
+  const [settings, setSettings] = useState<PublishingSettings | null>(null);
+  const [status, setStatus] = useState<IntegrationsStatus | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.publishingSettings().then(setSettings).catch((e) => setError(e.message));
+    api.integrations().then(setStatus);
+  }, []);
+
+  const channels = (status?.buffer.channels ?? []).filter((c) => MAIN.includes(c.service));
+  const update = async (patch: Partial<PublishingSettings>) => {
+    if (!settings) return;
+    let next = { ...settings, ...patch };
+    // Turning it on with nothing picked selects every TikTok/Instagram/YouTube channel.
+    if (patch.autoPublish && !next.channelIds.length) next = { ...next, channelIds: channels.map((c) => c.id) };
+    setSettings(next);
+    setSaved(false);
+    try {
+      setSettings(await api.savePublishingSettings(next));
+      setSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  if (!settings) return <p className="muted">{error ?? "Loading…"}</p>;
+  return (
+    <>
+      <h2>One-click publishing</h2>
+      <p className="muted">When this is on, pressing ✓ in Blitz renders the post and sends it to Buffer for every channel below. No extra steps.</p>
+      <div className="int-card">
+        <label className="toggle big-toggle">
+          <input type="checkbox" checked={settings.autoPublish} onChange={(e) => update({ autoPublish: e.target.checked })} />
+          Publish automatically when I approve a card
+        </label>
+      </div>
+      <div className="int-card">
+        <b>Post to</b>
+        {!status ? (
+          <p className="muted">Loading channels…</p>
+        ) : !status.buffer.ok ? (
+          <div className="note">Buffer isn't connected: {status.buffer.error ?? "set BUFFER_API_KEY"}.</div>
+        ) : channels.length === 0 ? (
+          <div className="note">No TikTok, Instagram or YouTube channels in Buffer yet. Connect them in Buffer, then refresh Integrations.</div>
+        ) : (
+          <div className="channel-list">
+            {channels.map((c) => (
+              <label key={c.id} className="channel-row">
+                <input
+                  type="checkbox"
+                  checked={settings.channelIds.includes(c.id)}
+                  onChange={(e) =>
+                    update({ channelIds: e.target.checked ? [...settings.channelIds, c.id] : settings.channelIds.filter((x) => x !== c.id) })
+                  }
+                />
+                {serviceIcon(c.service)}
+                <span>
+                  <b>{c.displayName || c.name}</b>
+                  <small>{c.service === "youtube" ? "YouTube Shorts" : c.service === "instagram" ? "Instagram (Reels / carousels)" : "TikTok"}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="int-card when">
+        <label>
+          <input type="radio" checked={settings.mode === "addToQueue"} onChange={() => update({ mode: "addToQueue" })} /> Add to my Buffer queue (posts at
+          my scheduled times)
+        </label>
+        <label>
+          <input type="radio" checked={settings.mode === "shareNow"} onChange={() => update({ mode: "shareNow" })} /> Post immediately
+        </label>
+        <label>
+          <input type="checkbox" checked={settings.slideshowsAsVideo} onChange={(e) => update({ slideshowsAsVideo: e.target.checked })} /> Send
+          slideshows to TikTok and Instagram as video too (YouTube always gets video)
+        </label>
+      </div>
+      {error && <div className="banner-error">{error}</div>}
+      {saved && <p className="muted small">Saved.</p>}
     </>
   );
 }
@@ -162,9 +273,23 @@ function RemixLibrary() {
   const [refs, setRefs] = useState<ViralReference[]>([]);
   const [form, setForm] = useState({ hook: "", slides: "", sourceUrl: "", likes: "", views: "", whyItWorks: "" });
   const [error, setError] = useState<string | null>(null);
+  const [pulling, setPulling] = useState<string | null>(null);
   useEffect(() => {
     api.references().then((r) => setRefs(r.references));
   }, []);
+
+  const pull = async () => {
+    setPulling("Pulling trending TikToks through Apify. This can take a minute or two…");
+    setError(null);
+    try {
+      const { added, references } = await api.pullTrending();
+      setRefs((r) => [...references, ...r]);
+      setPulling(`Added ${added} trending post${added === 1 ? "" : "s"}. Blitz remixes them first.`);
+    } catch (e) {
+      setError((e as Error).message);
+      setPulling(null);
+    }
+  };
 
   const add = async () => {
     setError(null);
@@ -191,6 +316,20 @@ function RemixLibrary() {
       <p className="muted">
         Blitz remixes these formats. Add a viral post you've seen and it is used first. Its stats then show in the "Remixed From" panel.
       </p>
+      <div className="int-card">
+        <div className="int-head">
+          <div>
+            <b>Trending on TikTok</b>
+            <small>Uses your brand topics as hashtags and imports the most-viewed posts with their real stats.</small>
+          </div>
+          <div className="int-right">
+            <button className="btn-primary" disabled={!!pulling && pulling.startsWith("Pulling")} onClick={pull}>
+              Pull trending
+            </button>
+          </div>
+        </div>
+        {pulling && <p className="muted small">{pulling}</p>}
+      </div>
       <div className="int-card ref-form">
         <label>
           Hook (first slide)

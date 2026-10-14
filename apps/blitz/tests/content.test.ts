@@ -3,6 +3,7 @@ import type { ProductProfile } from "../shared/types";
 import { ContentAI } from "../server/services/ai";
 import { buildCard, templateRemix } from "../server/services/generator";
 import { ImageSearch } from "../server/services/images";
+import { VideoSearch } from "../server/services/videos";
 import { BUILTIN_REFERENCES, pickReferences } from "../server/services/library";
 import { heuristicProfile, normalizeUrl, summarizeHtml } from "../server/services/website";
 
@@ -29,7 +30,7 @@ describe("template remix", () => {
   });
 
   it("builds a pending card with gradient slides when no AI or image keys are set", async () => {
-    const card = await buildCard(profile, BUILTIN_REFERENCES[0], new ContentAI(null), new ImageSearch(null));
+    const card = await buildCard(profile, BUILTIN_REFERENCES[0], new ContentAI(null), new ImageSearch(null, false), new VideoSearch(null, null));
     expect(card.status).toBe("pending");
     expect(card.generator).toBe("template");
     expect(card.slides.every((s) => s.imageUrl === null && s.background.length === 2)).toBe(true);

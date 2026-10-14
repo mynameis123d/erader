@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
+import { MOODS, type Mood } from "../shared/scene.js";
 import type { BlitzCard, BufferChannel, IntegrationsStatus, ProductProfile, ViralReference } from "../shared/types.js";
 import { config as defaultConfig } from "./config.js";
 import { Db } from "./db.js";
@@ -13,6 +14,8 @@ import { ImageSearch } from "./services/images.js";
 import { allReferences, pickReferences } from "./services/library.js";
 import { publishCard } from "./services/publisher.js";
 import { renderCard } from "./services/render.js";
+import { TrendScout } from "./services/trends.js";
+import { VideoSearch } from "./services/videos.js";
 import { fetchPage, heuristicProfile, pageForPrompt } from "./services/website.js";
 
 type Config = typeof defaultConfig;
@@ -40,12 +43,28 @@ const SlideBody = z.object({
   imageQuery: z.string(),
   imageUrl: z.string().nullable(),
   background: z.tuple([z.string(), z.string()]),
+  scene: z.enum(MOODS as [Mood, ...Mood[]]).nullable().optional(),
   textY: z.number().min(0).max(1),
 });
 
 const CardPatch = z.object({
   theme: z.string().optional(),
   slides: z.array(SlideBody).min(1).max(35).optional(),
+  video: z
+    .object({
+      query: z.string(),
+      source: z.enum(["pexels", "pixabay"]),
+      url: z.string().url(),
+      previewUrl: z.string().url(),
+      poster: z.string().nullable(),
+      duration: z.number(),
+      width: z.number(),
+      height: z.number(),
+      credit: z.string(),
+      pageUrl: z.string(),
+    })
+    .nullable()
+    .optional(),
   caption: z.string().max(2200).optional(),
   hashtags: z.array(z.string()).optional(),
 });
@@ -73,7 +92,9 @@ export function createApp(cfg: Config = defaultConfig) {
   fs.mkdirSync(cfg.mediaDir, { recursive: true });
   const db = new Db(path.join(cfg.dataDir, "db.json"));
   const ai = new ContentAI(cfg.anthropicApiKey);
-  const images = new ImageSearch(cfg.pexelsApiKey);
+  const images = new ImageSearch(cfg.pexelsApiKey, cfg.openverse);
+  const videos = new VideoSearch(cfg.pexelsApiKey, cfg.pixabayApiKey);
+  const trends = new TrendScout(cfg.apifyToken, cfg.apifyTikTokActor);
   const buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
 
   let channelCache: { at: number; orgId: string; channels: BufferChannel[] } | null = null;
@@ -88,6 +109,35 @@ export function createApp(cfg: Config = defaultConfig) {
     }
     channelCache = { at: Date.now(), orgId, channels: await buffer.channels(orgId) };
     return channelCache;
+  }
+
+  async function publish(card: BlitzCard, body: z.infer<typeof PublishBody>) {
+    if (!cfg.publicBaseUrl)
+      throw new HttpError(
+        400,
+        "PUBLIC_BASE_URL is not set. Buffer downloads media by URL, so this server must be reachable from the internet (deploy it or run a tunnel) and PUBLIC_BASE_URL must point at it.",
+      );
+    const { channels } = await bufferChannels();
+    const records = await publishCard(card, body, { buffer: buffer!, channels, publicBaseUrl: cfg.publicBaseUrl, mediaDir: cfg.mediaDir });
+    db.update(() => {
+      card.publishes.push(...records);
+      if (records.some((r) => r.ok)) card.status = "published";
+    });
+    return records;
+  }
+
+  /** One-click mode: an approved card goes straight to the chosen Buffer channels. */
+  function autoPublish(card: BlitzCard): boolean {
+    const s = db.state.publishing;
+    if (!s.autoPublish || !s.channelIds.length || !buffer) return false;
+    publish(card, { channelIds: s.channelIds, mode: s.mode, asVideo: s.slideshowsAsVideo }).catch((e: Error) => {
+      db.update(() =>
+        card.publishes.push(
+          ...s.channelIds.map((channelId) => ({ channelId, service: "unknown", ok: false, error: e.message, mediaType: "video" as const, at: new Date().toISOString() })),
+        ),
+      );
+    });
+    return true;
   }
 
   const references = () => allReferences(db.state.references);
@@ -108,8 +158,14 @@ export function createApp(cfg: Config = defaultConfig) {
     const profile = requireProfile();
     const usage = new Map<string, number>();
     for (const c of db.state.cards) usage.set(c.referenceId, (usage.get(c.referenceId) ?? 0) + 1);
-    const refs = pickReferences(references(), usage, count);
-    generating = Promise.all(refs.map((r) => buildCard(profile, r, ai, images)))
+    const all = references();
+    // With a video source configured, half of each batch is "Wall of Text" video posts.
+    const videoCount = videos.enabled ? Math.ceil(count / 2) : Math.floor(count / 3);
+    const refs = [
+      ...pickReferences(all.filter((r) => r.format === "video"), usage, videoCount),
+      ...pickReferences(all.filter((r) => r.format !== "video"), usage, count - videoCount),
+    ];
+    generating = Promise.all(refs.map((r) => buildCard(profile, r, ai, images, videos)))
       .then((cards) => {
         db.update((d) => d.cards.push(...cards));
         return cards;
@@ -127,7 +183,7 @@ export function createApp(cfg: Config = defaultConfig) {
   app.get("/api/state", (_req, res) => {
     res.json({
       profile: db.state.profile,
-      capabilities: { claude: ai.enabled, pexels: images.enabled, buffer: Boolean(buffer) },
+      capabilities: { claude: ai.enabled, pexels: Boolean(cfg.pexelsApiKey), photos: images.source, videos: videos.source, apify: trends.enabled, buffer: Boolean(buffer) },
       counts: countByStatus(db.state.cards),
     });
   });
@@ -201,7 +257,8 @@ export function createApp(cfg: Config = defaultConfig) {
       card.status = decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "pending";
       card.decidedAt = decision === "undo" ? undefined : new Date().toISOString();
     });
-    res.json({ card });
+    const publishing = decision === "approve" ? autoPublish(card) : false;
+    res.json({ card, publishing });
   });
 
   app.patch("/api/cards/:id", (req, res) => {
@@ -221,7 +278,7 @@ export function createApp(cfg: Config = defaultConfig) {
     } else {
       if (body.query) slide.imageQuery = body.query;
       const next = await images.find(slide.imageQuery, Math.floor(Math.random() * 15));
-      if (!next && !images.enabled) throw new HttpError(400, "Set PEXELS_API_KEY to search stock photos, or upload an image");
+      if (!next) throw new HttpError(404, `No photo found for "${slide.imageQuery}". Try other words, upload an image, or use a painted scene.`);
       slide.imageUrl = next;
     }
     db.update(() => undefined);
@@ -248,19 +305,47 @@ export function createApp(cfg: Config = defaultConfig) {
   app.post("/api/cards/:id/publish", async (req, res) => {
     const body = PublishBody.parse(req.body);
     if (body.mode === "customScheduled" && !body.dueAt) throw new HttpError(400, "Pick a date and time to schedule");
-    if (!cfg.publicBaseUrl)
-      throw new HttpError(
-        400,
-        "PUBLIC_BASE_URL is not set. Buffer downloads media by URL, so this server must be reachable from the internet (deploy it or run a tunnel) and PUBLIC_BASE_URL must point at it.",
-      );
     const card = requireCard(req.params.id);
-    const { channels } = await bufferChannels();
-    const records = await publishCard(card, body, { buffer: buffer!, channels, publicBaseUrl: cfg.publicBaseUrl, mediaDir: cfg.mediaDir });
-    db.update(() => {
-      card.publishes.push(...records);
-      if (records.some((r) => r.ok)) card.status = "published";
-    });
+    const records = await publish(card, body);
     res.json({ card, records });
+  });
+
+  app.post("/api/cards/:id/video", async (req, res) => {
+    const { query } = z.object({ query: z.string().optional() }).parse(req.body ?? {});
+    const card = requireCard(req.params.id);
+    if (!videos.enabled) throw new HttpError(400, "Add PEXELS_API_KEY (free) or PIXABAY_API_KEY to apps/blitz/.env to get background videos");
+    const q = query?.trim() || card.video?.query || card.slides[0]?.imageQuery || "";
+    const clip = await videos.find(q, Math.floor(Math.random() * 20));
+    if (!clip) throw new HttpError(404, `No vertical clips found for "${q}". Try other words.`);
+    db.update(() => {
+      card.video = clip;
+      card.slides[0].imageQuery = q;
+    });
+    res.json({ card });
+  });
+
+  app.get("/api/settings/publishing", (_req, res) => res.json(db.state.publishing));
+
+  app.put("/api/settings/publishing", (req, res) => {
+    const body = z
+      .object({
+        autoPublish: z.boolean(),
+        channelIds: z.array(z.string()),
+        mode: z.enum(["addToQueue", "shareNow"]),
+        slideshowsAsVideo: z.boolean(),
+      })
+      .parse(req.body);
+    db.update((d) => (d.publishing = body));
+    res.json(db.state.publishing);
+  });
+
+  app.post("/api/references/trending", async (_req, res) => {
+    const profile = requireProfile();
+    const found = await trends.trending(profile.keywords);
+    const known = new Set(db.state.references.map((r) => r.id));
+    const fresh = found.filter((r) => !known.has(r.id));
+    db.update((d) => d.references.unshift(...fresh));
+    res.json({ added: fresh.length, references: fresh });
   });
 
   app.get("/api/integrations", async (req, res) => {
@@ -268,7 +353,10 @@ export function createApp(cfg: Config = defaultConfig) {
       buffer: { configured: Boolean(buffer), ok: false, channels: [] },
       publicBaseUrl: cfg.publicBaseUrl,
       claude: ai.enabled,
-      pexels: images.enabled,
+      pexels: Boolean(cfg.pexelsApiKey),
+      photos: images.source,
+      videos: videos.source,
+      apify: trends.enabled,
     };
     if (buffer) {
       try {

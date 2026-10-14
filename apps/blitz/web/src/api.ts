@@ -3,16 +3,17 @@ import type {
   IntegrationsStatus,
   ProductProfile,
   PublishRecord,
+  PublishingSettings,
   PublishRequest,
   ViralReference,
 } from "../../shared/types";
 
-export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishRecord, PublishRequest, ViralReference };
+export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishingSettings, PublishRecord, PublishRequest, ViralReference };
 export type RefMap = Record<string, ViralReference | undefined>;
 
 export interface AppState {
   profile: ProductProfile | null;
-  capabilities: { claude: boolean; pexels: boolean; buffer: boolean };
+  capabilities: { claude: boolean; pexels: boolean; photos: string; videos: string | null; apify: boolean; buffer: boolean };
   counts: Record<string, number>;
 }
 
@@ -36,7 +37,11 @@ export const api = {
   generate: (count = 3) => call<{ cards: BlitzCard[]; references: RefMap }>("/api/blitz/generate", { method: "POST", json: { count } }),
   cards: (status: string) => call<{ cards: BlitzCard[]; references: RefMap }>(`/api/cards?status=${status}`),
   decide: (id: string, decision: "approve" | "reject" | "undo") =>
-    call<{ card: BlitzCard }>(`/api/cards/${id}/decision`, { method: "POST", json: { decision } }),
+    call<{ card: BlitzCard; publishing?: boolean }>(`/api/cards/${id}/decision`, { method: "POST", json: { decision } }),
+  newVideo: (id: string, query?: string) => call<{ card: BlitzCard }>(`/api/cards/${id}/video`, { method: "POST", json: { query } }),
+  publishingSettings: () => call<PublishingSettings>("/api/settings/publishing"),
+  savePublishingSettings: (s: PublishingSettings) => call<PublishingSettings>("/api/settings/publishing", { method: "PUT", json: s }),
+  pullTrending: () => call<{ added: number; references: ViralReference[] }>("/api/references/trending", { method: "POST" }),
   patchCard: (id: string, patch: Partial<Pick<BlitzCard, "theme" | "slides" | "caption" | "hashtags">>) =>
     call<{ card: BlitzCard }>(`/api/cards/${id}`, { method: "PATCH", json: patch }),
   slideImage: (id: string, slideId: string, body: { query?: string; imageUrl?: string | null }) =>
@@ -53,3 +58,4 @@ export const api = {
 
 export const fmtCount = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
+export const DEMO = false;

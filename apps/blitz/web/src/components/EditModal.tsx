@@ -1,7 +1,18 @@
 import { useState } from "react";
+import { MOODS, type Mood } from "../../../shared/scene";
 import type { Slide } from "../../../shared/types";
 import { api, type BlitzCard } from "../api";
-import { Carousel } from "./Slides";
+import { CardMedia } from "./CardMedia";
+
+const SCENE_LABELS: Record<Mood, string> = {
+  "dusk-forest": "Forest at dusk",
+  "city-night": "City at night",
+  "golden-hour": "Golden hour hills",
+  ocean: "Ocean sunset",
+  interior: "Cozy interior",
+  mountains: "Misty mountains",
+  court: "Outdoor court",
+};
 
 interface Props {
   card: BlitzCard;
@@ -17,6 +28,21 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const slide = draft.slides[index];
+  const isVideo = draft.format === "video";
+
+  const newVideo = async () => {
+    setBusy("video");
+    setError(null);
+    try {
+      await api.patchCard(card.id, { slides: draft.slides });
+      const { card: updated } = await api.newVideo(card.id, slide.imageQuery);
+      setDraft((d) => ({ ...d, video: updated.video }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
   const setSlide = (patch: Partial<Slide>) =>
     setDraft((d) => ({ ...d, slides: d.slides.map((s, i) => (i === index ? { ...s, ...patch } : s)) }));
 
@@ -96,8 +122,8 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
           ×
         </button>
         <div className="edit-preview">
-          <Carousel slides={draft.slides} index={index} onIndex={setIndex} />
-          <div className="slide-tabs">
+          <CardMedia card={draft} index={index} onIndex={setIndex} />
+          <div className="slide-tabs" hidden={isVideo}>
             {draft.slides.map((s, i) => (
               <button key={s.id} className={i === index ? "on" : ""} onClick={() => setIndex(i)}>
                 {i + 1}
@@ -114,7 +140,7 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
           </label>
 
           <div className="slide-editor">
-            <div className="row-between">
+            <div className="row-between" hidden={isVideo}>
               <strong>
                 Slide {index + 1} of {draft.slides.length}
               </strong>
@@ -134,13 +160,26 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
               </div>
             </div>
             <label>
-              Text
-              <textarea rows={3} value={slide.text} onChange={(e) => setSlide({ text: e.target.value })} autoFocus />
+              {isVideo ? "Text on video" : "Text"}
+              <textarea rows={isVideo ? 7 : 3} value={slide.text} onChange={(e) => setSlide({ text: e.target.value })} autoFocus />
             </label>
             <label>
               Text position
               <input type="range" min={0.1} max={0.9} step={0.01} value={slide.textY} onChange={(e) => setSlide({ textY: Number(e.target.value) })} />
             </label>
+            {isVideo ? (
+              <label>
+                Background video
+                <div className="input-row">
+                  <input value={slide.imageQuery} onChange={(e) => setSlide({ imageQuery: e.target.value })} placeholder="e.g. woman running sunset path" />
+                  <button disabled={!!busy} onClick={newVideo}>
+                    {busy === "video" ? "…" : "New video"}
+                  </button>
+                </div>
+                <small className="muted">{draft.video ? `Clip by ${draft.video.credit}` : "No clip yet: add a Pexels or Pixabay key to get matching footage."}</small>
+              </label>
+            ) : (
+            <>
             <label>
               Image search
               <div className="input-row">
@@ -155,8 +194,23 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
                 {busy === "upload" ? "Uploading…" : "Upload image"}
                 <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => upload(e.target.files?.[0])} />
               </label>
-              {slide.imageUrl && <button onClick={() => setSlide({ imageUrl: null })}>Use gradient</button>}
+              {slide.imageUrl && <button onClick={() => setSlide({ imageUrl: null })}>Use painted scene</button>}
             </div>
+            </>
+            )}
+            {!slide.imageUrl && !draft.video && (
+              <label>
+                Painted scene
+                <select value={slide.scene ?? ""} onChange={(e) => setSlide({ scene: (e.target.value || null) as Mood | null })}>
+                  <option value="">Auto (from image search)</option>
+                  {MOODS.map((m) => (
+                    <option key={m} value={m}>
+                      {SCENE_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <label>

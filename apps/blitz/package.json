@@ -7,7 +7,8 @@
     "build": "vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:preview": "vite build --mode demo"
   },
   "license": "MIT",
   "dependencies": {
@@ -30,6 +31,7 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^5.0.4"
   },
   "private": true,

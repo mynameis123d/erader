@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type BlitzCard, type RefMap } from "../api";
 import { EditModal } from "./EditModal";
 import { RemixedFrom } from "./RemixedFrom";
-import { Carousel } from "./Slides";
+import { CardMedia, formatLabel } from "./CardMedia";
 
 const REFILL_BELOW = 3;
 const SWIPE_THRESHOLD = 120;
@@ -20,6 +20,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
   const [whyOpen, setWhyOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
   const [lastDecided, setLastDecided] = useState<{ card: BlitzCard; decision: "approve" | "reject" } | null>(null);
   const drag = useRef<{ x: number; id: number } | null>(null);
 
@@ -70,7 +71,13 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
         setLastDecided({ card: top, decision });
         api
           .decide(top.id, decision)
-          .then(onCountsChange)
+          .then((r) => {
+            if (r.publishing) {
+              setToast(`Sending "${top.theme}" to your channels via Buffer…`);
+              setTimeout(() => setToast(null), 3500);
+            }
+            onCountsChange();
+          })
           .catch((e) => setError(e.message));
       }, 260);
     },
@@ -128,7 +135,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
         {top ? (
           <>
             <div className="chips">
-              <span className="chip chip-gray">{top.format === "slideshow" ? "Slideshow" : "Video"}</span>
+              <span className="chip chip-gray">{formatLabel(top)}</span>
               <span className="chip chip-green">{top.theme}</span>
             </div>
             <div className="why-wrap">
@@ -143,7 +150,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
               )}
             </div>
 
-            <div className="stack">
+            <div className={`stack ${top.format === "video" ? "tall" : ""}`}>
               {cards[2] && <div className="stack-ghost ghost-2" />}
               {cards[1] && <div className="stack-ghost ghost-1" />}
               <div
@@ -154,7 +161,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
               >
-                <Carousel slides={top.slides} index={slideIndex} onIndex={setSlideIndex} />
+                <CardMedia card={top} index={slideIndex} onIndex={setSlideIndex} />
                 <div className="stamp stamp-yes" style={{ opacity: Math.max(0, dx / SWIPE_THRESHOLD) }}>
                   APPROVE
                 </div>
@@ -204,6 +211,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
           </button>
         )}
         {generating && top && <div className="generating">Generating more…</div>}
+        {toast && <div className="toast">{toast}</div>}
       </section>
 
       {editing && top && (

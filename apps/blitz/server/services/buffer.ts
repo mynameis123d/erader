@@ -96,9 +96,11 @@ export class BufferClient {
   }
 
   async createPost(input: CreatePostInput): Promise<{ id: string }> {
-    const assets: Record<string, unknown> = {};
-    if (input.images?.length) assets.images = input.images.map((url) => ({ url }));
-    if (input.video) assets.videos = [{ url: input.video }];
+    // Buffer takes a list of assets; each entry holds exactly one of image / video / document / link.
+    const assets: Record<string, unknown>[] = [
+      ...(input.images ?? []).map((url) => ({ image: { url } })),
+      ...(input.video ? [{ video: { url: input.video } }] : []),
+    ];
 
     const gqlInput: Record<string, unknown> = {
       channelId: input.channelId,
@@ -106,7 +108,7 @@ export class BufferClient {
       schedulingType: gqlEnum("automatic"),
       mode: gqlEnum(input.mode),
       dueAt: input.mode === "customScheduled" ? input.dueAt : undefined,
-      assets,
+      assets: assets.length ? assets : undefined,
       metadata: platformMetadata(input),
     };
 

@@ -202,8 +202,60 @@ export const BUILTIN_REFERENCES: ViralReference[] = [
   }),
 ];
 
+// "Wall of Text" video formats: one stock clip, one block of text over it.
+const wall = (r: { id: string; text: string; structure: string; whyItWorks: string; imageQueries: string[] }): ViralReference => ({
+  id: r.id,
+  format: "video",
+  platform: "tiktok",
+  isTemplate: true,
+  hook: r.text.split("\n")[0],
+  slides: [r.text],
+  structure: r.structure,
+  whyItWorks: r.whyItWorks,
+  imageQueries: r.imageQueries,
+});
+
+export const WALL_OF_TEXT_REFERENCES: ViralReference[] = [
+  wall({
+    id: "wall-advice-from-someone",
+    text: "advice from someone who's done the {thing} shuffle:\npick the one that survives your workout, commute, grocery run, long walk, and eight-hour shift.\nif it can keep going, you shouldn't have to keep switching",
+    structure: "Lowercase advice paragraph from an experienced voice, over candid POV lifestyle footage.",
+    whyItWorks:
+      "Wall-of-text posts make viewers pause to read, which boosts watch time; the casual 'advice from someone who...' voice reads like a friend, not a brand.",
+    imageQueries: ["woman running sunset path", "walking city street pov", "friends outdoor summer"],
+  }),
+  wall({
+    id: "wall-nobody-tells-you",
+    text: "nobody tells you this about getting your life together:\nit's not one big change.\nit's the boring stuff you stop fighting every morning.\nthe things that just work so you don't have to think about them",
+    structure: "Hidden-truth paragraph with a calm reframe, over slow morning-routine footage.",
+    whyItWorks: "Relatable honesty plus a soft lesson gets saves and 'needed this' comments.",
+    imageQueries: ["morning routine coffee window", "slow morning bedroom", "making coffee kitchen"],
+  }),
+  wall({
+    id: "wall-i-used-to-think",
+    text: "i used to think i needed more motivation.\nturns out i needed fewer decisions.\nsame breakfast, same route, same {thing}.\nnow my energy goes to the stuff that actually matters",
+    structure: "Before-belief, then realisation, then the simple system, over everyday footage.",
+    whyItWorks: "Belief-flip paragraphs trigger self-recognition; the product appears as part of the system, not an ad.",
+    imageQueries: ["person walking city morning", "commute train window", "minimal desk workspace"],
+  }),
+  wall({
+    id: "wall-reminder",
+    text: "reminder:\nyou don't need the perfect plan.\nyou need the thing you'll actually use on a tuesday when you're tired.\nchoose that",
+    structure: "Short 'reminder:' pep paragraph over moody ambient footage.",
+    whyItWorks: "Short reminders are quick to read and rewatch, and they get shared as encouragement.",
+    imageQueries: ["rainy window city night", "sunset drive road", "ocean waves sunset"],
+  }),
+  wall({
+    id: "wall-things-that-just-make-sense",
+    text: "things that just make sense once you're over 25:\nbuying the comfortable version.\nleaving early.\nowning less but better.\nand never again settling for {thing} that makes your day harder",
+    structure: "Age-relatable list paragraph ending with the product category.",
+    whyItWorks: "Age-anchored relatability ('once you're over 25') drives comments and duets.",
+    imageQueries: ["friends laughing outdoor", "golden hour city walk", "picnic park summer"],
+  }),
+];
+
 export function allReferences(imported: ViralReference[]): ViralReference[] {
-  return [...imported, ...BUILTIN_REFERENCES];
+  return [...imported, ...WALL_OF_TEXT_REFERENCES, ...BUILTIN_REFERENCES];
 }
 
 /** Pick the next references, preferring ones that were used least. */

@@ -30,11 +30,15 @@ Production: `npm run build && npm start` serves the UI and API from one port.
 | `BUFFER_API_KEY` | Listing channels and creating posts | Publishing is disabled. You can still export the media. |
 | `PUBLIC_BASE_URL` | Buffer downloads media from this server, so it must be reachable from the internet: a deployment, or a tunnel like `cloudflared tunnel --url http://localhost:8787` | Publishing is refused with a clear error |
 | `ANTHROPIC_API_KEY` | Reading your website and writing remixes with Claude | Built-in templates with your product name filled in |
-| `PEXELS_API_KEY` | Stock photos for each slide (free key) | Gradient backgrounds (you can also upload images) |
+| `PEXELS_API_KEY` | **Background videos** for Wall of Text posts + photos for slides (free key) | Videos: a slowly zooming painted scene. Photos: Openverse public-domain search |
+| `PIXABAY_API_KEY` | Second free source of background videos | Pexels only |
+| `APIFY_TOKEN` | Settings → Remix library → **Pull trending**: imports the most-viewed TikToks for your topics (real hooks and stats) | Built-in formats + posts you add by hand |
 | `BUFFER_ORGANIZATION_ID` | Optional: pin a Buffer org | The first org on the account is used |
 
 ## Using it
 
+- **Formats**: *Wall of Text* (a stock video clip matched to the text, with outlined white text over it, rendered to a 7-15 s MP4) and *Slideshow* (photo slides with TikTok-style caption pills). With a video key, half of each batch is Wall of Text.
+- **One click**: Settings → One-click publishing → turn on and pick your TikTok, Instagram and YouTube channels. From then on, ✓ renders the post and sends it to Buffer (queue or immediately). Results show under Approved → Sent to Buffer.
 - **Blitz tab**: `→` or ✓ approves, `←` or ✕ skips, `E` edits, `U` undoes. You can also drag the card left or right.
   The left panel shows the format being remixed. "Why This Content?" explains the pick.
   The feed tops itself up when fewer than 3 cards are left.
@@ -63,7 +67,21 @@ shared/types.ts          Types shared by API and UI
 data/                    db.json + rendered media (git-ignored)
 ```
 
+## Preview build
+
+`npm run build:preview` writes `preview/index.html`, a single self-contained page of the real UI running on an
+in-browser stand-in API with sample cards (no network, nothing posted).
+
+## Network
+
+The server calls `api.buffer.com`, `api.pexels.com` (+ `videos.pexels.com`, `images.pexels.com`), `pixabay.com`,
+`api.openverse.org`, `api.apify.com` and `api.anthropic.com`. If you run it somewhere with an outbound allowlist, allow those hosts.
+
 ## Notes
+
+- Trending posts from Apify are used as references only (hook, format, stats). Background footage always comes from
+  Pexels/Pixabay, which license clips for commercial use. Re-uploading other creators' videos would break copyright
+  and gets down-ranked as duplicate content.
 
 - The Buffer client targets Buffer's GraphQL API (`https://api.buffer.com`, Bearer key). The sandbox this was built in
   couldn't reach Buffer, so run Settings → Integrations → Refresh once with your key. If Buffer rejects a field,

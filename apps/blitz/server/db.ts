@@ -1,15 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BlitzCard, ProductProfile, ViralReference } from "../shared/types.js";
+import type { BlitzCard, ProductProfile, PublishingSettings, ViralReference } from "../shared/types.js";
 
 export interface DbShape {
   profile: ProductProfile | null;
   cards: BlitzCard[];
   /** User-imported references; merged with the built-in library. */
   references: ViralReference[];
+  publishing: PublishingSettings;
 }
 
-const empty = (): DbShape => ({ profile: null, cards: [], references: [] });
+const empty = (): DbShape => ({
+  profile: null,
+  cards: [],
+  references: [],
+  publishing: { autoPublish: false, channelIds: [], mode: "addToQueue", slideshowsAsVideo: false },
+});
 
 /** Tiny JSON-file store. Good enough for a single-user tool; swap for SQLite/Postgres later. */
 export class Db {

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Slide } from "../../../shared/types";
+import { sceneUrl } from "../scene-cache";
 
 export function SlideView({ slide, size = "md" }: { slide: Slide; size?: "sm" | "md" }) {
-  const bg = slide.imageUrl
-    ? { backgroundImage: `url("${slide.imageUrl}")` }
-    : { backgroundImage: `linear-gradient(135deg, ${slide.background[0]}, ${slide.background[1]})` };
+  // The painted scene sits under the photo, so a photo that fails to load still leaves a background.
+  const scene = `url("${sceneUrl(slide)}")`;
+  const bg = { backgroundImage: slide.imageUrl ? `url("${slide.imageUrl}"), ${scene}` : scene };
   return (
     <div className={`slide slide-${size}`} style={bg}>
       <div className="slide-text" style={{ top: `${slide.textY * 100}%` }}>

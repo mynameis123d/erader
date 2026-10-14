@@ -1,5 +1,7 @@
 // Types shared by the API server and the web client.
 
+import type { Mood } from "./scene";
+
 export type ContentFormat = "slideshow" | "video";
 
 /** What Fastlane calls the brand context: built from the user's website. */
@@ -31,6 +33,8 @@ export interface ViralReference {
   /** Search terms for the visual mood of the original. */
   imageQueries: string[];
   sourceUrl?: string;
+  /** Cover image of the original post (from Apify), if known. */
+  thumbnail?: string;
   /** Only real numbers. Library templates leave these empty. */
   likes?: number;
   views?: number;
@@ -43,10 +47,28 @@ export interface Slide {
   text: string;
   imageQuery: string;
   imageUrl: string | null;
-  /** Gradient used when no image is available. */
+  /** Gradient kept for older cards; painted scenes are used when there is no photo. */
   background: [string, string];
+  /** Painted scene used when there is no photo. Unset = picked from imageQuery. */
+  scene?: Mood | null;
   /** Vertical position of the text block, 0 (top) to 1 (bottom). */
   textY: number;
+}
+
+/** Stock background clip (Pexels / Pixabay) behind a video post. */
+export interface CardVideo {
+  query: string;
+  source: "pexels" | "pixabay";
+  /** High-res MP4 used for the export. */
+  url: string;
+  /** Lighter MP4 for the in-app preview. */
+  previewUrl: string;
+  poster: string | null;
+  duration: number;
+  width: number;
+  height: number;
+  credit: string;
+  pageUrl: string;
 }
 
 export type CardStatus = "pending" | "approved" | "rejected" | "published";
@@ -57,7 +79,10 @@ export interface BlitzCard {
   /** Short concept name, e.g. "One Shoe, Full Day". */
   theme: string;
   referenceId: string;
+  /** Slideshow: one entry per slide. Video ("Wall of Text"): exactly one entry, the text over the clip. */
   slides: Slide[];
+  /** Background clip for video posts. */
+  video?: CardVideo | null;
   caption: string;
   hashtags: string[];
   why: string;
@@ -66,6 +91,15 @@ export interface BlitzCard {
   createdAt: string;
   decidedAt?: string;
   publishes: PublishRecord[];
+}
+
+/** One-click publishing: approving a card sends it straight to these Buffer channels. */
+export interface PublishingSettings {
+  autoPublish: boolean;
+  channelIds: string[];
+  mode: "addToQueue" | "shareNow";
+  /** Send slideshows to TikTok/Instagram as video too. */
+  slideshowsAsVideo: boolean;
 }
 
 export type PublishMode = "addToQueue" | "shareNow" | "customScheduled";
@@ -109,4 +143,9 @@ export interface IntegrationsStatus {
   publicBaseUrl: string | null;
   claude: boolean;
   pexels: boolean;
+  /** Which photo source new slides use. */
+  photos: "pexels" | "openverse" | "scenes";
+  /** Where background videos come from (null = no key, video posts use painted scenes). */
+  videos: "pexels" | "pixabay" | null;
+  apify: boolean;
 }

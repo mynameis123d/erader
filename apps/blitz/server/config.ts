@@ -23,4 +23,9 @@ export const config = {
   publicBaseUrl: opt("PUBLIC_BASE_URL")?.replace(/\/+$/, "") ?? null,
   anthropicApiKey: opt("ANTHROPIC_API_KEY"),
   pexelsApiKey: opt("PEXELS_API_KEY"),
+  /** Keyless CC0 photo search used when there is no Pexels key. Set OPENVERSE=off to use painted scenes only. */
+  openverse: opt("OPENVERSE") !== "off",
+  pixabayApiKey: opt("PIXABAY_API_KEY"),
+  apifyToken: opt("APIFY_TOKEN"),
+  apifyTikTokActor: opt("APIFY_TIKTOK_ACTOR") ?? "clockworks~tiktok-scraper",
 };

@@ -43,8 +43,8 @@ describe("BufferClient", () => {
     const query = JSON.parse((f.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).query as string;
     expect(query).toContain("mode: addToQueue");
     expect(query).toContain("schedulingType: automatic");
-    expect(query).toContain('images: [{ url: "https://cdn/a.png" }, { url: "https://cdn/b.png" }]');
-    expect(query).toContain("instagram: { type: post");
+    expect(query).toContain('assets: [{ image: { url: "https://cdn/a.png" } }, { image: { url: "https://cdn/b.png" } }]');
+    expect(query).toContain("instagram: { type: post, shouldShareToFeed: true }");
     expect(query).not.toContain("dueAt");
   });
 
@@ -62,7 +62,7 @@ describe("BufferClient", () => {
     });
     const query = JSON.parse((f.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).query as string;
     expect(query).toContain('dueAt: "2026-10-20T15:00:00.000Z"');
-    expect(query).toContain('videos: [{ url: "https://cdn/v.mp4" }]');
+    expect(query).toContain('assets: [{ video: { url: "https://cdn/v.mp4" } }]');
     expect(query).toContain('youtube: { title: "Hook slide"');
   });
 

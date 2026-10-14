@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { BufferChannel, PublishMode } from "../../../shared/types";
-import { api, type BlitzCard, type PublishRecord } from "../api";
+import { api, DEMO, type BlitzCard, type PublishRecord } from "../api";
 import { EditModal } from "./EditModal";
-import { Carousel } from "./Slides";
+import { CardMedia } from "./CardMedia";
 import { serviceIcon, serviceLabel } from "./icons";
 
 export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
@@ -42,7 +42,7 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
         <div className="queue-grid">
           {cards.map((c) => (
             <div key={c.id} className="queue-card">
-              <Carousel slides={c.slides} size="sm" />
+              <CardMedia card={c} size="sm" autoPlay={false} />
               <div className="queue-meta">
                 <span className="chip chip-green">{c.theme}</span>
                 <p className="caption">{c.caption}</p>
@@ -85,7 +85,7 @@ function PublishLog({ records }: { records: PublishRecord[] }) {
     <ul className="publish-log">
       {records.map((r, i) => (
         <li key={i} className={r.ok ? "ok" : "fail"}>
-          {serviceIcon(r.service)} {serviceLabel(r.service)} · {r.mediaType} · {r.ok ? "queued in Buffer" : r.error}
+          {serviceIcon(r.service)} {serviceLabel(r.service)} · {r.mediaType} · {r.ok ? (DEMO ? "would be sent to Buffer (preview)" : "sent to Buffer") : r.error}
         </li>
       ))}
     </ul>
@@ -202,31 +202,37 @@ function PublishDialog({ card, onClose, onDone }: { card: BlitzCard; onClose: ()
           </label>
         </fieldset>
 
-        <label className="toggle">
-          <input type="checkbox" checked={asVideo} onChange={(e) => setAsVideo(e.target.checked)} />
-          Send TikTok & Instagram as a video (Reel) instead of a photo carousel
-        </label>
+        {card.format === "video" ? (
+          <p className="muted small">Wall of Text posts go out as a vertical video everywhere: TikTok, Instagram Reels and YouTube Shorts.</p>
+        ) : (
+          <label className="toggle">
+            <input type="checkbox" checked={asVideo} onChange={(e) => setAsVideo(e.target.checked)} />
+            Send TikTok & Instagram as a video (Reel) instead of a photo carousel
+          </label>
+        )}
 
         {records && <PublishLog records={records} />}
         {error && <div className="banner-error">{error}</div>}
         {downloads && (
           <div className="downloads">
+            <div className="thumbs">
+              {downloads.images.map((u, i) => (
+                <a key={i} href={u} target="_blank" rel="noreferrer" title={`Slide ${i + 1}`}>
+                  <img src={u} alt={`Rendered slide ${i + 1}`} />
+                </a>
+              ))}
+            </div>
             {downloads.video && (
-              <a href={downloads.video} download>
-                Download video
+              <a href={downloads.video} target="_blank" rel="noreferrer">
+                Open video (MP4)
               </a>
             )}
-            {downloads.images.map((u, i) => (
-              <a key={u} href={u} download>
-                Slide {i + 1}
-              </a>
-            ))}
           </div>
         )}
 
         <div className="modal-footer">
           <button className="btn-ghost" disabled={busy} onClick={exportMedia}>
-            Export media
+            Preview export
           </button>
           <button className="btn-primary" disabled={busy || !selected.length || !!loadError || (mode === "customScheduled" && !dueAt)} onClick={publish}>
             {busy ? "Working…" : `Send to ${selected.length} channel${selected.length === 1 ? "" : "s"}`}

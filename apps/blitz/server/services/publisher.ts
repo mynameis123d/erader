@@ -16,8 +16,8 @@ export function postText(card: BlitzCard): string {
 }
 
 /** Which media a channel gets: YouTube Shorts needs video; TikTok/Instagram default to a photo carousel. */
-export function planMedia(service: string, asVideo: boolean): { kind: "images" | "video"; aspect: Aspect } {
-  if (service === "youtube") return { kind: "video", aspect: "9:16" };
+export function planMedia(service: string, asVideo: boolean, format: BlitzCard["format"] = "slideshow"): { kind: "images" | "video"; aspect: Aspect } {
+  if (format === "video" || service === "youtube") return { kind: "video", aspect: "9:16" };
   if (service === "instagram") return asVideo ? { kind: "video", aspect: "9:16" } : { kind: "images", aspect: "4:5" };
   return { kind: asVideo ? "video" : "images", aspect: "9:16" };
 }
@@ -36,7 +36,7 @@ export async function publishCard(card: BlitzCard, req: PublishRequest, deps: Pu
   for (const channelId of req.channelIds) {
     const channel = deps.channels.find((c) => c.id === channelId);
     const service = channel?.service ?? "unknown";
-    const plan = planMedia(service, Boolean(req.asVideo));
+    const plan = planMedia(service, Boolean(req.asVideo), card.format);
     const record: PublishRecord = { channelId, service, ok: false, mediaType: plan.kind, at: new Date().toISOString() };
     try {
       if (!channel) throw new Error("Channel not found in Buffer");
@@ -45,7 +45,7 @@ export async function publishCard(card: BlitzCard, req: PublishRequest, deps: Pu
         channelId,
         service,
         text: postText(card),
-        title: card.slides[0]?.text,
+        title: card.slides[0]?.text.split("\n")[0],
         mode: req.mode,
         dueAt: req.dueAt,
         images: plan.kind === "images" ? out.images.map(abs) : undefined,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type AppState } from "./api";
+import { api, DEMO, type AppState } from "./api";
 import { BlitzPage } from "./components/BlitzPage";
 import { ProfileForm } from "./components/ProfileForm";
 import { QueuePage } from "./components/QueuePage";
@@ -55,6 +55,11 @@ export function App() {
           </button>
         </div>
       </header>
+      {DEMO && (
+        <div className="preview-banner">
+          Preview with sample cards and sample channels. Nothing is posted. Here, Wall of Text cards show a moving painted scene; the real app plays a matching Pexels clip.
+        </div>
+      )}
       <main>
         {page === "blitz" ? <BlitzPage key={blitzKey} onCountsChange={refresh} /> : <QueuePage onCountsChange={refresh} />}
       </main>
