@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import type { BufferChannel, PublishMode } from "../../../shared/types";
 import { api, DEMO, type BlitzCard, type PublishRecord } from "../api";
 import { EditModal } from "./EditModal";
-import { CardMedia } from "./CardMedia";
+import { CardMedia, formatLabel } from "./CardMedia";
+import { toast } from "./Toaster";
+import { Inbox, Loader2, Pencil, Send, Undo2 } from "lucide-react";
 import { serviceIcon, serviceLabel } from "./icons";
 
 export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
@@ -11,6 +13,7 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
   const [cards, setCards] = useState<BlitzCard[] | null>(null);
   const [publishing, setPublishing] = useState<BlitzCard | null>(null);
   const [editing, setEditing] = useState<BlitzCard | null>(null);
+  const [sending, setSending] = useState(false);
 
   const load = () => api.cards(tab).then((r) => setCards(r.cards));
   useEffect(() => {
@@ -25,6 +28,29 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
     onCountsChange();
   };
 
+  const sendAll = async () => {
+    if (!cards?.length) return;
+    const settings = await api.publishingSettings().catch(() => null);
+    if (!settings?.channelIds.length) {
+      toast.info("Pick your channels once in One-click publishing, then Send all uses them");
+      return;
+    }
+    setSending(true);
+    let ok = 0;
+    for (const c of cards) {
+      try {
+        const { records } = await api.publish(c.id, { channelIds: settings.channelIds, mode: settings.mode, asVideo: settings.slideshowsAsVideo });
+        if (records.some((r) => r.ok)) ok++;
+      } catch (e) {
+        toast.error(`${c.theme}: ${(e as Error).message}`);
+      }
+    }
+    setSending(false);
+    if (ok) toast.success(`Sent ${ok} post${ok === 1 ? "" : "s"} to Buffer`);
+    await load();
+    onCountsChange();
+  };
+
   return (
     <div className="queue">
       <header className="page-head">
@@ -32,45 +58,84 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
           <h1>Content</h1>
           <p className="sub">Approved posts, and everything already sent to Buffer.</p>
         </div>
+        {tab === "approved" && cards && cards.length > 0 && (
+          <div className="head-actions">
+            <button className="btn btn-primary" onClick={sendAll} disabled={sending}>
+              {sending ? <Loader2 size={15} className="spin" /> : <Send size={15} />} {sending ? "Sending…" : `Send all ${cards.length}`}
+            </button>
+          </div>
+        )}
       </header>
-      <div className="tabs">
-        <button className={tab === "approved" ? "on" : ""} onClick={() => setTab("approved")}>
-          Approved
-        </button>
-        <button className={tab === "published" ? "on" : ""} onClick={() => setTab("published")}>
-          Sent to Buffer
-        </button>
+      <div className="segmented">
+        {(
+          [
+            ["approved", "Approved"],
+            ["published", "Sent to Buffer"],
+          ] as const
+        ).map(([id, label]) => (
+          <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
+            {tab === id && <motion.span layoutId="content-tab" className="seg-pill" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
       {!cards ? (
-        <div className="center-msg">Loading…</div>
-      ) : cards.length === 0 ? (
-        <div className="center-msg">{tab === "approved" ? "Approve cards in Blitz and they'll show up here." : "Nothing sent yet."}</div>
-      ) : (
         <div className="queue-grid">
-          {cards.map((c) => (
-            <div key={c.id} className="queue-card">
-              <CardMedia card={c} size="sm" autoPlay={false} />
-              <div className="queue-meta">
-                <span className="chip chip-green">{c.theme}</span>
-                <p className="caption">{c.caption}</p>
-                {c.publishes.length > 0 && <PublishLog records={c.publishes} />}
-                <div className="queue-actions">
-                  <button className="btn-primary" onClick={() => setPublishing(c)}>
-                    Publish
-                  </button>
-                  <button className="btn-ghost" onClick={() => setEditing(c)}>
-                    Edit
-                  </button>
-                  {tab === "approved" && (
-                    <button className="btn-ghost" onClick={() => void unapprove(c)}>
-                      Back to Blitz
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="queue-card skeleton-card" />
           ))}
         </div>
+      ) : cards.length === 0 ? (
+        <div className="empty-state">
+          {tab === "approved" ? <Inbox size={26} /> : <Send size={26} />}
+          <b>{tab === "approved" ? "Nothing approved yet" : "Nothing sent yet"}</b>
+          <span>{tab === "approved" ? "Swipe right on cards in Blitz and they land here, ready to send." : "Posts you send to Buffer show up here with their status."}</span>
+        </div>
+      ) : (
+        <motion.div className="queue-grid" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.05 } } }}>
+          <AnimatePresence>
+            {cards.map((c) => {
+              const sent = c.publishes.filter((r) => r.ok).length;
+              const failed = c.publishes.filter((r) => !r.ok).length;
+              return (
+                <motion.article
+                  key={c.id}
+                  layout
+                  className="queue-card"
+                  variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                >
+                  <div className="queue-media">
+                    <CardMedia card={c} size="sm" autoPlay={false} />
+                  </div>
+                  <div className="queue-meta">
+                    <div className="queue-badges">
+                      <span className="badge">{formatLabel(c)}</span>
+                      {sent > 0 && <span className="badge badge-ok">Sent ×{sent}</span>}
+                      {failed > 0 && <span className="badge badge-no">{failed} failed</span>}
+                    </div>
+                    <b className="queue-title">{c.theme}</b>
+                    <p className="caption">{c.caption}</p>
+                    {c.publishes.length > 0 && <PublishLog records={c.publishes} />}
+                    <div className="queue-actions">
+                      <button className="btn btn-primary btn-sm" onClick={() => setPublishing(c)}>
+                        <Send size={13} /> Publish
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditing(c)}>
+                        <Pencil size={13} /> Edit
+                      </button>
+                      {tab === "approved" && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => void unapprove(c)} title="Move back to the Blitz feed">
+                          <Undo2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </motion.article>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
       )}
       <AnimatePresence>
       {publishing && (

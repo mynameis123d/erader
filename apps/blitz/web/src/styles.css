@@ -562,3 +562,19 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
   .blitz .actions, .blitz .undo-row { flex: none; }
   .blitz .side-panel { height: 100%; overflow: auto; padding-top: 44px; padding-bottom: 8px; scrollbar-width: thin; }
 }
+
+/* ---------- content page ---------- */
+.queue-card { display: flex; flex-direction: column; }
+.queue-media { position: relative; height: 360px; }
+.queue-media .carousel { height: 100%; }
+.queue-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge { font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); }
+.badge-ok { background: var(--ok-soft); color: var(--ok); }
+.badge-no { background: var(--no-soft); color: var(--no); }
+.queue-title { font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; }
+.queue-meta { flex: 1; }
+.queue-meta .caption { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.queue-actions { margin-top: auto; padding-top: 4px; }
+.btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; gap: 5px; }
+.skeleton-card { height: 480px; position: relative; overflow: hidden; background: var(--surface-2); }
+.skeleton-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--surface) 80%, transparent) 50%, transparent 80%); background-size: 200% 100%; animation: shimmer 1.4s infinite linear; }

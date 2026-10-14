@@ -490,7 +490,7 @@ export const api = {
     const c = find(id);
     const records: PublishRecord[] = req.channelIds.map((channelId) => {
       const ch = channels.find((x) => x.id === channelId)!;
-      const video = c.format === "video" || ch.service === "youtube" || Boolean(req.asVideo);
+      const video = c.format !== "slideshow" || ch.service === "youtube" || Boolean(req.asVideo);
       return { channelId, service: ch.service, ok: true, bufferPostId: "preview", mediaType: video ? "video" : "images", at: new Date().toISOString() };
     });
     c.publishes.push(...records);

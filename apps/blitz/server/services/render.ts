@@ -268,7 +268,7 @@ async function renderSegment(seg: SegmentSpec) {
 
 async function concatSegments(parts: string[], out: string, dir: string) {
   const list = path.join(dir, "segments.txt");
-  fs.writeFileSync(list, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"));
+  fs.writeFileSync(list, parts.map((p) => `file '${p.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n"));
   await run(ffmpegBin(), ["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", out], { timeout: 120000 });
 }
 
