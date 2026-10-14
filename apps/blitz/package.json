@@ -9,7 +9,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build:preview": "vite build --mode demo",
-    "check": "tsx scripts/check-keys.ts"
+    "check": "tsx scripts/check-keys.ts",
+    "setup": "node scripts/setup.mjs"
   },
   "license": "MIT",
   "dependencies": {

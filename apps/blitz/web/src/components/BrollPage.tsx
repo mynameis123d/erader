@@ -325,9 +325,9 @@ function ClipTile({
       </div>
       <div className="clip-body">
         <b title={clip.title}>{clip.title}</b>
-        <small>{clip.creator ? `@${clip.creator}` : clip.source === "upload" ? "Uploaded" : "TikTok"}</small>
+        <small>{clip.creator ? `@${clip.creator}` : clip.source === "upload" ? "Uploaded" : clip.source === "website" ? "From your website" : "TikTok"}</small>
         <div className="clip-actions">
-          {clip.source === "tiktok" && clip.sourceUrl && (
+          {clip.sourceUrl && (
             <a className="btn btn-xs btn-ghost" href={clip.sourceUrl} target="_blank" rel="noreferrer">
               <ExternalLink size={12} /> Open
             </a>

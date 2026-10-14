@@ -85,3 +85,168 @@ export function heuristicProfile(p: PageSummary): ProfileDraft {
     keywords,
   };
 }
+
+// ---------------------------------------------------------------- multi-page crawl
+
+export interface SiteImage {
+  url: string;
+  alt: string;
+  page: string;
+}
+
+export interface SiteProduct {
+  name: string;
+  description?: string;
+  price?: string;
+  image?: string;
+  url: string;
+}
+
+export interface SiteCrawl {
+  root: string;
+  pages: PageSummary[];
+  images: SiteImage[];
+  products: SiteProduct[];
+}
+
+type FetchLike = typeof fetch;
+
+/** Paths worth reading to understand a product, best first. */
+const PRIORITY_HIGH = /\/(products?|collections?|shop|features?|pricing|plans|solutions?)(\/|$|\?)/i;
+const PRIORITY_LOW = /\/(about|our-story|how-it-works|faq|reviews?)(\/|$|\?)/i;
+const rank = (u: string) => (PRIORITY_HIGH.test(u) ? 2 : PRIORITY_LOW.test(u) ? 1 : 0);
+const SKIP = /\/(cart|checkout|account|login|signin|signup|register|privacy|terms|legal|cookie|careers|jobs|blog\/page)/i;
+
+const attr = (tag: string, name: string) => tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, "i"))?.[1];
+
+/** Absolute same-site links from a page. */
+export function extractLinks(baseUrl: string, html: string): string[] {
+  const base = new URL(baseUrl);
+  const out = new Set<string>();
+  for (const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"'#]+)["']/gi)) {
+    try {
+      const u = new URL(m[1], base);
+      if (u.host.replace(/^www\./, "") !== base.host.replace(/^www\./, "") || !/^https?:$/.test(u.protocol)) continue;
+      if (SKIP.test(u.pathname) || /\.(pdf|zip|jpg|jpeg|png|gif|svg|webp|mp4)$/i.test(u.pathname)) continue;
+      u.hash = "";
+      out.add(u.toString());
+    } catch {
+      /* ignore malformed */
+    }
+  }
+  return [...out];
+}
+
+/** Real product imagery: og/twitter images plus large content <img>s. Skips icons, logos, sprites and SVGs. */
+export function extractImages(pageUrl: string, html: string): SiteImage[] {
+  const base = new URL(pageUrl);
+  const found: SiteImage[] = [];
+  const push = (src: string | undefined, alt: string) => {
+    if (!src || src.startsWith("data:")) return;
+    try {
+      const u = new URL(src.split(/\s+/)[0], base).toString();
+      if (/\.svg(\?|$)|logo|icon|sprite|favicon|avatar|badge|payment|flag/i.test(u)) return;
+      if (!found.some((f) => f.url === u)) found.push({ url: u, alt: decode(alt), page: pageUrl });
+    } catch {
+      /* ignore */
+    }
+  };
+  for (const key of ["og:image", "twitter:image"]) {
+    const tag = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]*>`, "i"))?.[0];
+    if (tag) push(attr(tag, "content"), "");
+  }
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = m[0];
+    const w = Number(attr(tag, "width") ?? 0);
+    if (w && w < 300) continue;
+    const srcset = attr(tag, "srcset") ?? attr(tag, "data-srcset");
+    const best = srcset?.split(",").map((s) => s.trim()).pop();
+    push(best ?? attr(tag, "data-src") ?? attr(tag, "src"), attr(tag, "alt") ?? "");
+  }
+  return found;
+}
+
+/** schema.org Product data from JSON-LD blocks (Shopify and most stores ship this). */
+export function extractProducts(pageUrl: string, html: string): SiteProduct[] {
+  const out: SiteProduct[] = [];
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    const n = node as Record<string, unknown>;
+    const type = n["@type"];
+    if (type === "Product" || (Array.isArray(type) && type.includes("Product"))) {
+      const offers = (Array.isArray(n.offers) ? n.offers[0] : n.offers) as Record<string, unknown> | undefined;
+      const img = Array.isArray(n.image) ? n.image[0] : n.image;
+      out.push({
+        name: String(n.name ?? "").trim(),
+        description: typeof n.description === "string" ? decode(n.description).slice(0, 300) : undefined,
+        price: offers?.price ? `${offers.price} ${offers.priceCurrency ?? ""}`.trim() : undefined,
+        image: typeof img === "string" ? img : typeof img === "object" && img ? String((img as { url?: string }).url ?? "") || undefined : undefined,
+        url: pageUrl,
+      });
+    }
+    if (n["@graph"]) visit(n["@graph"]);
+  };
+  for (const m of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      visit(JSON.parse(m[1]));
+    } catch {
+      /* ignore invalid JSON-LD */
+    }
+  }
+  return out.filter((p) => p.name);
+}
+
+async function getHtml(url: string, fetchImpl: FetchLike): Promise<{ url: string; html: string } | null> {
+  try {
+    const res = await fetchImpl(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; BlitzBot/0.2)", Accept: "text/html" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok || !(res.headers.get("content-type") ?? "text/html").includes("html")) return null;
+    return { url: res.url || url, html: await res.text() };
+  } catch {
+    return null;
+  }
+}
+
+/** Read the homepage plus the most informative internal pages (products, features, pricing, about). */
+export async function crawlSite(rawUrl: string, maxPages = 6, fetchImpl: FetchLike = fetch): Promise<SiteCrawl> {
+  const root = normalizeUrl(rawUrl).toString();
+  const home = await getHtml(root, fetchImpl);
+  if (!home) throw new Error(`Could not load ${new URL(root).host}`);
+  const links = extractLinks(home.url, home.html)
+    .filter((l) => l !== home.url)
+    .sort((a, b) => rank(b) - rank(a) || a.length - b.length)
+    .slice(0, maxPages - 1);
+  const rest = (await Promise.all(links.map((l) => getHtml(l, fetchImpl)))).filter((x): x is { url: string; html: string } => x !== null);
+  const all = [home, ...rest];
+  const products: SiteProduct[] = [];
+  for (const p of all) for (const prod of extractProducts(p.url, p.html)) if (!products.some((x) => x.name === prod.name)) products.push(prod);
+  const images: SiteImage[] = [];
+  for (const p of all) for (const img of extractImages(p.url, p.html)) if (!images.some((x) => x.url === img.url)) images.push(img);
+  for (const prod of products) if (prod.image && !images.some((x) => x.url === prod.image)) images.unshift({ url: prod.image, alt: prod.name, page: prod.url });
+  return { root: home.url, pages: all.map((p) => summarizeHtml(p.url, p.html)), images: images.slice(0, 24), products: products.slice(0, 20) };
+}
+
+/** Everything the model reads about the site, page by page, within a size budget. */
+export function crawlForPrompt(c: SiteCrawl, budget = 40000): string {
+  const parts = [
+    c.products.length ? `Products found:\n${c.products.map((p) => `- ${p.name}${p.price ? ` (${p.price})` : ""}${p.description ? `: ${p.description}` : ""}`).join("\n")}` : "",
+    ...c.pages.map((p) => `=== ${p.url}\n${pageForPrompt({ ...p, text: p.text.slice(0, 6000) })}`),
+  ].filter(Boolean);
+  return parts.join("\n\n").slice(0, budget);
+}
+
+/** Profile without an LLM, from every crawled page's metadata and the store's product data. */
+export function heuristicFromCrawl(c: SiteCrawl): ProfileDraft {
+  const home = heuristicProfile(c.pages[0]);
+  const headings = c.pages.flatMap((p) => p.headings).filter((h) => h.length > 8 && h.length < 90);
+  return {
+    ...home,
+    oneLiner: home.oneLiner || c.products[0]?.description || home.name,
+    benefits: [...new Set(headings)].slice(0, 6),
+    keywords: [...new Set([...c.products.slice(0, 3).map((p) => p.name.toLowerCase()), ...home.keywords])].slice(0, 10),
+  };
+}

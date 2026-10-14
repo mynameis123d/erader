@@ -80,6 +80,30 @@ export function ProfileForm({ initial, onSaved }: { initial: ProductProfile | nu
       </div>
       {source === "heuristic" && <p className="muted">Basic analysis from page metadata. Add ANTHROPIC_API_KEY for a full AI read, or edit below.</p>}
       {error && <div className="banner-error">{error}. You can fill in the profile manually.</div>}
+      {draft?.site && (
+        <div className="site-read">
+          <b>
+            Read {draft.site.pages.length} page{draft.site.pages.length === 1 ? "" : "s"} from {(() => { try { return new URL(draft.url).host; } catch { return draft.url; } })()}
+            {draft.site.analyzedBy === "claude" ? " · analyzed by Claude" : ""}
+          </b>
+          <ul>
+            {draft.site.pages.map((p) => (
+              <li key={p}>
+                <a href={p} target="_blank" rel="noreferrer">
+                  {(() => { try { return new URL(p).pathname || "/"; } catch { return p; } })()}
+                </a>
+              </li>
+            ))}
+          </ul>
+          {draft.site.products.length > 0 && (
+            <p>
+              Products: {draft.site.products.slice(0, 6).map((p) => `${p.name}${p.price ? ` (${p.price})` : ""}`).join(", ")}
+              {draft.site.products.length > 6 ? ` and ${draft.site.products.length - 6} more` : ""}
+            </p>
+          )}
+          {draft.site.imageCount > 0 && <p>{draft.site.imageCount} product images added to your Media Bank.</p>}
+        </div>
+      )}
       {draft && (
         <div className="profile-fields">
           {field("name", "Product name")}

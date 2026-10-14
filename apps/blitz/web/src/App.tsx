@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import { api, DEMO, type AppState } from "./api";
+import { api, appPassword, AuthError, DEMO, type AppState } from "./api";
 import { BlitzPage } from "./components/BlitzPage";
 import { BrollPage } from "./components/BrollPage";
 import { Onboarding } from "./components/Onboarding";
@@ -12,6 +12,8 @@ import { Toaster } from "./components/Toaster";
 export function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState<string | null>(null);
+  const [pw, setPw] = useState("");
   const [page, setPage] = useState<Page>("blitz");
   const [settings, setSettings] = useState<Section | null>(null);
   const [blitzKey, setBlitzKey] = useState(0);
@@ -20,10 +22,35 @@ export function App() {
     api
       .state()
       .then(setState)
-      .catch((e) => setError(e.message));
+      .then(() => setLocked(null))
+      .catch((e) => (e instanceof AuthError ? setLocked(e.message) : setError(e.message)));
   }, []);
   useEffect(refresh, [refresh]);
 
+  if (locked)
+    return (
+      <div className="lock-screen">
+        <form
+          className="lock-card"
+          onSubmit={(e) => {
+            e.preventDefault();
+            appPassword.set(pw);
+            refresh();
+          }}
+        >
+          <div className="logo">
+            <span className="logo-mark">⚡</span>
+            <span className="logo-word">Blitz</span>
+          </div>
+          <h1>Enter your app password</h1>
+          <p className="muted">{locked}</p>
+          <input id="app-password" type="password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} />
+          <button className="btn-primary" type="submit" disabled={!pw}>
+            Unlock
+          </button>
+        </form>
+      </div>
+    );
   if (error)
     return (
       <div className="fullscreen-msg">

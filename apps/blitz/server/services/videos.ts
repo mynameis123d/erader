@@ -43,6 +43,13 @@ export class VideoSearch {
     return this.pexelsKey ? "pexels" : this.pixabayKey ? "pixabay" : null;
   }
 
+  /** Run one search without swallowing errors, for the connection test. */
+  async probe(query = "city street walking"): Promise<CardVideo> {
+    const list = this.pexelsKey ? await this.pexels(query) : await this.pixabay(query);
+    if (!list.length) throw new Error("The key works but the search returned no clips");
+    return list[0];
+  }
+
   /** A vertical-friendly clip for the query (variant picks among results), or null. */
   async find(query: string, variant = 0): Promise<CardVideo | null> {
     const q = query.trim();
@@ -66,7 +73,10 @@ export class VideoSearch {
     const res = await this.fetchImpl(`https://api.pexels.com/videos/search?${params}`, {
       headers: { Authorization: this.pexelsKey! },
       signal: AbortSignal.timeout(12000),
+    }).catch((e: Error) => {
+      throw new Error(`Could not reach Pexels: ${e.message}`);
     });
+    if (res.status === 401 || res.status === 403) throw new Error("Pexels rejected the key");
     if (!res.ok) throw new Error(`Pexels HTTP ${res.status}`);
     const body = (await res.json()) as { videos?: PexelsVideo[] };
     return (body.videos ?? [])

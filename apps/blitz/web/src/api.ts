@@ -31,18 +31,61 @@ export interface AppState {
   counts: Record<string, number>;
 }
 
+const PASSWORD_KEY = "blitz.password";
+export const appPassword = {
+  get: () => {
+    try {
+      return localStorage.getItem(PASSWORD_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  },
+  set: (v: string) => {
+    try {
+      localStorage.setItem(PASSWORD_KEY, v);
+    } catch {
+      /* private mode: the password just won't be remembered */
+    }
+  },
+};
+
+/** Thrown when the server wants the app password (opened through a public URL). */
+export class AuthError extends Error {
+  constructor(message: string, readonly code: string) {
+    super(message);
+  }
+}
+
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: init?.json !== undefined ? { "Content-Type": "application/json", ...init?.headers } : init?.headers,
-    body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+  const headers = new Headers(init?.headers);
+  if (init?.json !== undefined) headers.set("Content-Type", "application/json");
+  const pw = appPassword.get();
+  if (pw) headers.set("x-blitz-password", pw);
+  const res = await fetch(path, { ...init, headers, body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body });
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+  if (res.status === 401 || body.code === "remote_disabled") throw new AuthError(body.error ?? "Password required", body.code ?? "password_required");
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
   return body as T;
 }
 
+export interface KeyInfo {
+  name: string;
+  label: string;
+  purpose: string;
+  getUrl?: string;
+  secret: boolean;
+  set: boolean;
+  from: "settings" | "env" | null;
+  preview: string | null;
+}
+export interface Check {
+  ok: boolean;
+  detail: string;
+}
+
 export const api = {
+  keys: () => call<{ keys: KeyInfo[] }>("/api/keys"),
+  saveKey: (name: string, value: string) => call<{ saved: boolean; test: Check | null }>(`/api/keys/${name}`, { method: "PUT", json: { value } }),
   state: () => call<AppState>("/api/state"),
   analyze: (url: string) =>
     call<{ profile: Omit<ProductProfile, "updatedAt">; source: string }>("/api/profile/analyze", { method: "POST", json: { url } }),
@@ -68,7 +111,7 @@ export const api = {
   abortScrape: (runId: string) => call<{ run: unknown }>(`/api/scrapes/${runId}/abort`, { method: "POST" }),
   preferences: () => call<BlitzPreferences>("/api/preferences"),
   savePreferences: (p: BlitzPreferences) => call<BlitzPreferences>("/api/preferences", { method: "PUT", json: p }),
-  testIntegrations: () => call<Record<"buffer" | "apify" | "videos" | "claude", { ok: boolean; detail: string }>>("/api/integrations/test", { method: "POST" }),
+  testIntegrations: () => call<Record<"buffer" | "apify" | "videos" | "claude" | "public", Check>>("/api/integrations/test", { method: "POST" }),
   patchBroll: (id: string, patch: Partial<Pick<BrollClip, "title" | "tags" | "rights" | "rightsNote">>) =>
     call<{ clip: BrollClip }>(`/api/broll/${id}`, { method: "PATCH", json: patch }),
   fetchBroll: (id: string) => call<{ clip: BrollClip }>(`/api/broll/${id}/fetch`, { method: "POST" }),

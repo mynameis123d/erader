@@ -1,5 +1,5 @@
 import { AnimatePresence, animate, motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { Brain, Check, Pencil, RefreshCw, Sparkles, Undo2, X } from "lucide-react";
+import { Brain, Check, ExternalLink, Link2, Pencil, RefreshCw, Sparkles, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type BlitzCard, type RefMap } from "../api";
 import { CardMedia, formatLabel } from "./CardMedia";
@@ -266,6 +266,32 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
                   </ul>
                   {top.video && <small className="credit-line">Footage: {top.video.credit}</small>}
                   {top.format === "hook_demo" && !top.demoVideo && <small className="credit-line">No demo clip yet: upload one to the Media Bank and tag it "demo".</small>}
+                </div>
+                <div className="details-block">
+                  <div className="details-label">
+                    <Link2 size={14} /> Sources
+                  </div>
+                  {top.sources?.length ? (
+                    <ul className="sources">
+                      {top.sources.map((src, i) => (
+                        <li key={i} className={`src-${src.kind}`}>
+                          <span className="src-dot" />
+                          <div>
+                            {src.url ? (
+                              <a href={src.url} target="_blank" rel="noreferrer">
+                                {src.label} <ExternalLink size={11} />
+                              </a>
+                            ) : (
+                              <b>{src.label}</b>
+                            )}
+                            {src.detail && <small>{src.detail}</small>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>Written from your brand profile. No outside post or footage was used.</p>
+                  )}
                 </div>
               </motion.div>
             )}

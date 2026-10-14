@@ -27,5 +27,6 @@ export const config = {
   openverse: opt("OPENVERSE") !== "off",
   pixabayApiKey: opt("PIXABAY_API_KEY"),
   apifyToken: opt("APIFY_TOKEN"),
+  appPassword: opt("APP_PASSWORD"),
   apifyTikTokActor: opt("APIFY_TIKTOK_ACTOR") ?? "clockworks~tiktok-scraper",
 };

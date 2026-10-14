@@ -3,6 +3,7 @@ import type {
   BlitzPreferences,
   BrollClip,
   CardVideo,
+  CardSource,
   ContentFormat,
   ProductProfile,
   Slide,
@@ -136,10 +137,37 @@ async function findVideo(deps: CardDeps, query: string, variant: number, preferT
   return deps.videos.find(query, variant);
 }
 
-async function findImage(deps: CardDeps, query: string, variant: number): Promise<string | null> {
+async function findImage(deps: CardDeps, query: string, variant: number, used?: CardSource[]): Promise<string | null> {
   const own = matchClip(deps.library, query, variant, "image");
-  if (own?.fileUrl) return own.fileUrl;
-  return deps.images.find(query, variant);
+  if (own?.fileUrl) {
+    used?.push({ kind: "photo", label: own.source === "website" ? "Your website" : "Your Media Bank", detail: own.title, url: own.sourceUrl ?? own.fileUrl });
+    return own.fileUrl;
+  }
+  const url = await deps.images.find(query, variant);
+  if (url) used?.push({ kind: "photo", label: /pexels/.test(url) ? "Pexels photo" : "Public-domain photo (Openverse)", detail: `"${query}"`, url });
+  return url;
+}
+
+function footageSource(v: CardVideo | null, role: string): CardSource[] {
+  if (!v) return [];
+  const label = v.source === "library" ? "Your Media Bank" : v.source === "pexels" ? "Pexels video" : "Pixabay video";
+  return [{ kind: "footage", label: `${role}: ${label}`, detail: `${v.credit} · searched "${v.query}"`, url: v.pageUrl }];
+}
+
+export function cardSources(profile: ProductProfile, reference: ViralReference | undefined, angle: string | undefined): CardSource[] {
+  const out: CardSource[] = [];
+  if (profile.site?.pages.length) {
+    out.push({ kind: "website", label: `Your website (${profile.site.pages.length} page${profile.site.pages.length === 1 ? "" : "s"} read)`, detail: profile.site.pages.map((p) => new URL(p).pathname).join(", "), url: profile.url });
+  } else if (profile.url) out.push({ kind: "website", label: "Your brand profile", detail: profile.oneLiner, url: profile.url });
+  if (reference) {
+    const stats = [reference.views !== undefined ? `${reference.views.toLocaleString("en-US")} views` : "", reference.likes !== undefined ? `${reference.likes.toLocaleString("en-US")} likes` : ""].filter(Boolean).join(", ");
+    out.push(
+      reference.isTemplate
+        ? { kind: "reference", label: "Built-in viral format", detail: `"${reference.hook}" (format template, no single source post)` }
+        : { kind: "reference", label: `Remixed ${reference.platform === "tiktok" ? "TikTok" : reference.platform} post`, detail: `"${reference.hook}"${stats ? ` · ${stats}` : ""}`, url: reference.sourceUrl },
+    );
+  } else if (angle) out.push({ kind: "angle", label: "Create New", detail: `Content angle: ${angle}` });
+  return out;
 }
 
 function slide(text: string, imageQuery: string, textY: number, imageUrl: string | null = null): Slide {
@@ -168,6 +196,7 @@ export async function buildCard(spec: CardSpec, deps: CardDeps): Promise<BlitzCa
   const s0 = draft.slides[0] ?? { text: "", imageQuery: fallbackQuery };
   const s1 = draft.slides[1] ?? { text: "", imageQuery: fallbackQuery };
 
+  const used: CardSource[] = [];
   let slides: Slide[];
   let video: CardVideo | null = null;
   let demoVideo: CardVideo | null = null;
@@ -182,7 +211,7 @@ export async function buildCard(spec: CardSpec, deps: CardDeps): Promise<BlitzCa
     }
     case "green_screen": {
       const bgQuery = s0.imageQuery || fallbackQuery;
-      slides = [slide(s0.text, bgQuery, 0.12, reference?.thumbnail ?? (await findImage(deps, bgQuery, v)))];
+      slides = [slide(s0.text, bgQuery, 0.12, reference?.thumbnail ?? (await findImage(deps, bgQuery, v, used)))];
       video = await findVideo(deps, s1.imageQuery || "person talking to camera", v, ["creator", "talking", "facecam"]);
       break;
     }
@@ -196,7 +225,7 @@ export async function buildCard(spec: CardSpec, deps: CardDeps): Promise<BlitzCa
     }
     default:
       slides = await Promise.all(
-        draft.slides.map(async (s, i) => slide(s.text, s.imageQuery, 0.42, await findImage(deps, s.imageQuery, v + i))),
+        draft.slides.map(async (s, i) => slide(s.text, s.imageQuery, 0.42, await findImage(deps, s.imageQuery, v + i, used))),
       );
   }
 
@@ -207,6 +236,12 @@ export async function buildCard(spec: CardSpec, deps: CardDeps): Promise<BlitzCa
     referenceId: reference?.id ?? "original",
     origin: reference ? "remix" : "original",
     angle,
+    sources: [
+      ...cardSources(profile, reference, angle),
+      ...footageSource(video, format === "green_screen" ? "Creator clip" : format === "hook_demo" ? "Hook clip" : "Background"),
+      ...footageSource(demoVideo, "Demo clip"),
+      ...used.filter((u, i) => used.findIndex((x) => x.url === u.url) === i).slice(0, 6),
+    ],
     slides,
     video,
     demoVideo,

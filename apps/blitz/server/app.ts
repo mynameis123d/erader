@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { MOODS, type Mood } from "../shared/scene.js";
 import type { BlitzCard, BufferChannel, IntegrationsStatus, ProductProfile, ViralReference } from "../shared/types.js";
 import { config as defaultConfig } from "./config.js";
 import { Db, type ScrapeJob } from "./db.js";
+import { KEY_DEFS, KeyStore, mask } from "./keys.js";
 import { ContentAI } from "./services/ai.js";
 import { BufferClient, BufferError } from "./services/buffer.js";
 import { buildCard, planBatch, referencesFor } from "./services/generator.js";
@@ -17,7 +18,7 @@ import { renderCard } from "./services/render.js";
 import { ApifyClient, RUN_DONE, toBrollCandidates, toReferences } from "./services/trends.js";
 import { clipToVideo, ingestFile, ingestImage, isUsable, matchClip } from "./services/broll.js";
 import { VideoSearch } from "./services/videos.js";
-import { fetchPage, heuristicProfile, pageForPrompt } from "./services/website.js";
+import { crawlForPrompt, crawlSite, heuristicFromCrawl } from "./services/website.js";
 
 type Config = typeof defaultConfig;
 
@@ -36,6 +37,15 @@ const ProfileBody = z.object({
   painPoints: z.array(z.string()),
   benefits: z.array(z.string()),
   keywords: z.array(z.string()),
+  site: z
+    .object({
+      pages: z.array(z.string()),
+      products: z.array(z.object({ name: z.string(), price: z.string().optional(), url: z.string() })),
+      imageCount: z.number(),
+      analyzedAt: z.string(),
+      analyzedBy: z.enum(["claude", "heuristic"]),
+    })
+    .optional(),
 });
 
 const SlideBody = z.object({
@@ -89,16 +99,29 @@ const ReferenceBody = z.object({
   views: z.number().int().nonnegative().optional(),
 });
 
-export function createApp(cfg: Config = defaultConfig) {
-  fs.mkdirSync(cfg.mediaDir, { recursive: true });
-  const db = new Db(path.join(cfg.dataDir, "db.json"));
-  const ai = new ContentAI(cfg.anthropicApiKey);
-  const images = new ImageSearch(cfg.pexelsApiKey, cfg.openverse);
-  const videos = new VideoSearch(cfg.pexelsApiKey, cfg.pixabayApiKey);
-  const apify = new ApifyClient(cfg.apifyToken, cfg.apifyTikTokActor);
-  const buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
-
+export function createApp(baseCfg: Config = defaultConfig) {
+  fs.mkdirSync(baseCfg.mediaDir, { recursive: true });
+  const db = new Db(path.join(baseCfg.dataDir, "db.json"));
+  const keys = new KeyStore(path.join(baseCfg.dataDir, "keys.json"));
+  // Effective config: .env values, overridden by keys saved in Settings → API keys.
+  const cfg: Config = { ...baseCfg, ...keys.overrides() };
+  let ai = new ContentAI(cfg.anthropicApiKey);
+  let images = new ImageSearch(cfg.pexelsApiKey, cfg.openverse);
+  let videos = new VideoSearch(cfg.pexelsApiKey, cfg.pixabayApiKey);
+  let apify = new ApifyClient(cfg.apifyToken, cfg.apifyTikTokActor);
+  let buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
   let channelCache: { at: number; orgId: string; channels: BufferChannel[] } | null = null;
+
+  /** Rebuild every client after a key changes, so new keys work without a restart. */
+  function reloadKeys() {
+    Object.assign(cfg, baseCfg, keys.overrides());
+    ai = new ContentAI(cfg.anthropicApiKey);
+    images = new ImageSearch(cfg.pexelsApiKey, cfg.openverse);
+    videos = new VideoSearch(cfg.pexelsApiKey, cfg.pixabayApiKey);
+    apify = new ApifyClient(cfg.apifyToken, cfg.apifyTikTokActor);
+    buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
+    channelCache = null;
+  }
   async function bufferChannels(force = false) {
     if (!buffer) throw new HttpError(400, "BUFFER_API_KEY is not set in apps/blitz/.env");
     if (!force && channelCache && Date.now() - channelCache.at < 60_000) return channelCache;
@@ -252,6 +275,22 @@ export function createApp(cfg: Config = defaultConfig) {
   app.use(express.json({ limit: "2mb" }));
   app.use("/media", express.static(cfg.mediaDir, { maxAge: "1h" }));
 
+  // The API (keys, publishing) is only open to this computer. Through a tunnel or deployment
+  // it needs the app password; /media stays public because Buffer downloads posts from it.
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/health") return next();
+    const forwarded = req.headers["x-forwarded-for"] || req.headers["cf-connecting-ip"] || req.headers["x-real-ip"];
+    const ip = req.socket.remoteAddress ?? "";
+    const local = !forwarded && (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1");
+    if (local) return next();
+    if (!cfg.appPassword) return res.status(403).json({ error: "Remote access is off. On the computer running Blitz, set an App password in Settings → API keys.", code: "remote_disabled" });
+    const given = String(req.headers["x-blitz-password"] ?? "");
+    const a = Buffer.from(given);
+    const b = Buffer.from(cfg.appPassword);
+    if (a.length === b.length && timingSafeEqual(a, b)) return next();
+    res.status(401).json({ error: "Enter the app password", code: "password_required" });
+  });
+
   app.get("/api/state", (_req, res) => {
     res.json({
       profile: db.state.profile,
@@ -262,20 +301,45 @@ export function createApp(cfg: Config = defaultConfig) {
 
   app.post("/api/profile/analyze", async (req, res) => {
     const { url } = z.object({ url: z.string().min(3) }).parse(req.body);
-    const page = await fetchPage(url).catch((e: Error) => {
+    const crawl = await crawlSite(url).catch((e: Error) => {
       throw new HttpError(422, e.message);
     });
-    let draft = heuristicProfile(page);
+    let draft = heuristicFromCrawl(crawl);
     let source: "claude" | "heuristic" = "heuristic";
     if (ai.enabled) {
       try {
-        draft = await ai.analyzeSite(page.url, pageForPrompt(page));
+        draft = await ai.analyzeSite(crawl.root, crawlForPrompt(crawl));
         source = "claude";
       } catch (e) {
         console.warn("[profile] Claude analysis failed:", (e as Error).message);
       }
     }
-    res.json({ profile: { ...draft, url: page.url }, source });
+    // The site's own product photos go into the Media Bank, so posts can show the real product.
+    const known = new Set(db.state.broll.map((c) => c.fileUrl));
+    const siteImages = crawl.images
+      .filter((img) => !known.has(img.url))
+      .map((img, i) => ({
+        id: `web-${randomUUID().slice(0, 8)}`,
+        kind: "image" as const,
+        source: "website" as const,
+        title: img.alt || `${draft.name} image ${i + 1}`,
+        tags: ["product", "website", ...draft.keywords.slice(0, 3), ...img.alt.toLowerCase().split(/\W+/).filter((w) => w.length > 3).slice(0, 5)],
+        sourceUrl: img.page,
+        thumbnail: img.url,
+        fileUrl: img.url,
+        rights: "owned" as const,
+        rightsNote: `From ${new URL(crawl.root).host}`,
+        addedAt: new Date().toISOString(),
+      }));
+    db.update((d) => d.broll.unshift(...siteImages));
+    const site = {
+      pages: crawl.pages.map((p) => p.url),
+      products: crawl.products.map((p) => ({ name: p.name, price: p.price, url: p.url })),
+      imageCount: crawl.images.length,
+      analyzedAt: new Date().toISOString(),
+      analyzedBy: source,
+    };
+    res.json({ profile: { ...draft, url: crawl.root, site }, source });
   });
 
   app.put("/api/profile", (req, res) => {
@@ -527,34 +591,97 @@ export function createApp(cfg: Config = defaultConfig) {
   });
 
   // ---------- live connection test ----------
-  app.post("/api/integrations/test", async (_req, res) => {
-    const check = async (fn: () => Promise<string>) => {
-      try {
-        return { ok: true, detail: await fn() };
-      } catch (e) {
-        return { ok: false, detail: (e as Error).message };
-      }
-    };
-    const [bufferResult, apifyResult, pexelsResult] = await Promise.all([
+  type Check = { ok: boolean; detail: string };
+  const check = async (fn: () => Promise<string>): Promise<Check> => {
+    try {
+      return { ok: true, detail: await fn() };
+    } catch (e) {
+      return { ok: false, detail: (e as Error).message };
+    }
+  };
+  const TESTS: Record<string, () => Promise<Check>> = {
+    buffer: () =>
       check(async () => {
-        if (!buffer) throw new Error("BUFFER_API_KEY is not set");
+        if (!buffer) throw new Error("No Buffer key yet");
         const { channels } = await bufferChannels(true);
         const main = channels.filter((c) => ["tiktok", "instagram", "youtube"].includes(c.service));
         return `Connected. ${channels.length} channel(s): ${channels.map((c) => `${c.service} ${c.displayName ?? c.name}`).join(", ") || "none"}${main.length ? "" : ". Connect TikTok, Instagram and YouTube in Buffer"}`;
       }),
+    apify: () =>
       check(async () => {
-        if (!apify.enabled) throw new Error("APIFY_TOKEN is not set");
+        if (!apify.enabled) throw new Error("No Apify token yet");
         const me = await apify.me();
         return `Connected as ${me.username}${me.plan ? ` (${me.plan} plan)` : ""}. Scraper: ${apify.actor}`;
       }),
+    videos: () =>
       check(async () => {
-        if (!videos.enabled) throw new Error("PEXELS_API_KEY / PIXABAY_API_KEY not set");
-        const v = await videos.find("city street walking");
-        if (!v) throw new Error("Search returned nothing (check the key)");
+        if (!videos.enabled) throw new Error("No Pexels or Pixabay key yet");
+        const v = await videos.probe();
         return `Working. Sample clip: ${v.credit}`;
       }),
-    ]);
-    res.json({ buffer: bufferResult, apify: apifyResult, videos: pexelsResult, claude: { ok: ai.enabled, detail: ai.enabled ? "Key set" : "ANTHROPIC_API_KEY is not set" } });
+    claude: () =>
+      check(async () => {
+        if (!ai.enabled) throw new Error("No Anthropic key yet");
+        await ai.ping();
+        return "Key works";
+      }),
+    public: () =>
+      check(async () => {
+        if (!cfg.publicBaseUrl) throw new Error("Not set");
+        const res = await fetch(`${cfg.publicBaseUrl}/api/health`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+        if (!res?.ok) throw new Error(`${cfg.publicBaseUrl} doesn't reach this server yet. Is the tunnel or deployment running?`);
+        return `${cfg.publicBaseUrl} reaches this server`;
+      }),
+  };
+  const TEST_FOR_FIELD: Record<string, string> = {
+    apifyToken: "apify",
+    bufferApiKey: "buffer",
+    bufferOrganizationId: "buffer",
+    anthropicApiKey: "claude",
+    pexelsApiKey: "videos",
+    pixabayApiKey: "videos",
+    publicBaseUrl: "public",
+    appPassword: "public",
+  };
+
+  app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+  app.post("/api/integrations/test", async (_req, res) => {
+    const [b, a, v, c, p] = await Promise.all([TESTS.buffer(), TESTS.apify(), TESTS.videos(), TESTS.claude(), TESTS.public()]);
+    res.json({ buffer: b, apify: a, videos: v, claude: c, public: p });
+  });
+
+  // ---------- API keys (Settings → API keys) ----------
+  app.get("/api/keys", (_req, res) => {
+    res.json({
+      keys: KEY_DEFS.map((d) => {
+        const saved = keys.get(d.name);
+        const env = process.env[d.name]?.trim();
+        const value = saved ?? env;
+        return {
+          name: d.name,
+          label: d.label,
+          purpose: d.purpose,
+          getUrl: d.getUrl,
+          secret: d.secret,
+          set: Boolean(value),
+          from: saved ? "settings" : env ? "env" : null,
+          preview: value ? (d.secret ? mask(value) : value) : null,
+        };
+      }),
+    });
+  });
+
+  app.put("/api/keys/:name", async (req, res) => {
+    const def = KEY_DEFS.find((d) => d.name === req.params.name);
+    if (!def) throw new HttpError(404, "Unknown key");
+    const { value } = z.object({ value: z.string().max(500) }).parse(req.body);
+    const v = value.trim();
+    if (v && def.pattern && !def.pattern.test(v)) throw new HttpError(400, `That doesn't look like a valid ${def.label} ${def.secret ? "key" : "value"}. Check for missing characters or spaces.`);
+    keys.set(def.name, v || null);
+    reloadKeys();
+    const test = v ? await TESTS[TEST_FOR_FIELD[def.field]]() : null;
+    res.json({ saved: true, test });
   });
 
   app.get("/api/integrations", async (req, res) => {

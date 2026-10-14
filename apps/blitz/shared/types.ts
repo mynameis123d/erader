@@ -48,7 +48,25 @@ export interface ProductProfile {
   painPoints: string[];
   benefits: string[];
   keywords: string[];
+  /** What was read from the website to build this profile. */
+  site?: SiteSummary;
   updatedAt: string;
+}
+
+export interface SiteSummary {
+  pages: string[];
+  products: { name: string; price?: string; url: string }[];
+  imageCount: number;
+  analyzedAt: string;
+  analyzedBy: "claude" | "heuristic";
+}
+
+/** Where a card's ideas and visuals came from, shown as "Sources" on the card. */
+export interface CardSource {
+  kind: "website" | "reference" | "footage" | "photo" | "angle";
+  label: string;
+  detail?: string;
+  url?: string;
 }
 
 /** A viral post (or post format) that Blitz remixes, shown as "Remixed From". */
@@ -123,6 +141,7 @@ export interface BlitzCard {
   origin?: "remix" | "original";
   /** The content angle an original idea was written for. */
   angle?: string;
+  sources?: CardSource[];
   caption: string;
   hashtags: string[];
   why: string;
@@ -200,7 +219,7 @@ export interface BrollClip {
   id: string;
   /** Media Bank items can be clips or still images. Missing = video (older data). */
   kind?: "video" | "image";
-  source: "tiktok" | "upload";
+  source: "tiktok" | "upload" | "website";
   title: string;
   tags: string[];
   creator?: string;

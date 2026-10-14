@@ -14,10 +14,16 @@ paste your URL ──▶ brand profile ──▶ Blitz feed ──▶ ✓ approv
 
 ```bash
 cd apps/blitz
-cp .env.example .env      # then fill in the keys (see below)
-npm install
-npm run dev               # API on :8787, UI on http://localhost:5173
+npm run setup             # installs everything (ffmpeg + renderer included), builds the app
+npm start                 # open http://localhost:8787
 ```
+
+Then paste your keys in **Settings → API keys** (or during first-run setup). Each key is tested the moment you
+save it and works immediately; no restart, no editing files. Keys are stored only on your computer in
+`data/keys.json` (git-ignored, private file). `.env` still works and is overridden by keys saved in Settings.
+
+Opening Blitz from anywhere but the computer it runs on (for example through your public URL) needs the
+**App password** you set on that page. `/media` stays public so Buffer can download your videos.
 
 Production: `npm run build && npm start` serves the UI and API from one port.
 

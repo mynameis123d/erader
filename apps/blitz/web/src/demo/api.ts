@@ -39,6 +39,26 @@ export interface AppState {
 }
 
 export const DEMO = true;
+export const appPassword = { get: () => "", set: (_v: string) => undefined };
+export class AuthError extends Error {
+  constructor(message: string, readonly code: string) {
+    super(message);
+  }
+}
+export interface KeyInfo {
+  name: string;
+  label: string;
+  purpose: string;
+  getUrl?: string;
+  secret: boolean;
+  set: boolean;
+  from: "settings" | "env" | null;
+  preview: string | null;
+}
+export interface Check {
+  ok: boolean;
+  detail: string;
+}
 
 export const fmtCount = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
@@ -347,7 +367,19 @@ let broll: BrollClip[] = [
 let prefs: BlitzPreferences = { ...structuredClone(DEFAULT_PREFERENCES), voice: "Dry, confident, a little funny. Talks like a friend who runs.", angles: ["myths about running shoes", "a day in the life", "customer wins"] };
 const scrapes: ScrapeJob[] = [];
 
+const demoKeys = [
+  { name: "APIFY_TOKEN", label: "Apify", purpose: "Scrapes trending TikToks in your niche.", getUrl: "https://console.apify.com/settings/integrations", secret: true, set: true, from: "settings" as const, preview: "••••p3T" },
+  { name: "BUFFER_API_KEY", label: "Buffer", purpose: "Posts to your TikTok, Instagram and YouTube channels.", getUrl: "https://publish.buffer.com/settings/api", secret: true, set: true, from: "settings" as const, preview: "••••ixzl" },
+  { name: "ANTHROPIC_API_KEY", label: "Claude (Anthropic)", purpose: "Reads your website and writes every post.", getUrl: "https://console.anthropic.com/settings/keys", secret: true, set: false, from: null, preview: null },
+  { name: "PEXELS_API_KEY", label: "Pexels", purpose: "Real stock videos and photos matched to each post (free).", getUrl: "https://www.pexels.com/api/new/", secret: true, set: false, from: null, preview: null },
+  { name: "PUBLIC_BASE_URL", label: "Public URL of this app", purpose: "Buffer downloads your rendered videos from here.", secret: false, set: false, from: null, preview: null },
+];
+
 export const api = {
+  keys: async () => ({ keys: clone(demoKeys) }),
+  saveKey: async (_name: string, _value: string): Promise<{ saved: boolean; test: { ok: boolean; detail: string } | null }> => {
+    throw new Error("The preview can't store keys. Run the app and paste them in Settings → API keys");
+  },
   preferences: async () => clone(prefs),
   savePreferences: async (p: BlitzPreferences) => (prefs = clone(p)),
   testIntegrations: async () => ({
@@ -355,6 +387,7 @@ export const api = {
     apify: { ok: false, detail: "The preview can't call Apify. Run the app with your keys to test" },
     videos: { ok: false, detail: "The preview can't call Pexels" },
     claude: { ok: false, detail: "The preview uses sample cards" },
+    public: { ok: false, detail: "The preview has no server" },
   }),
   scrapes: async () => ({ scrapes: clone(scrapes), apify: true }),
   startScrape: async (_b: { hashtags?: string[]; runId?: string }): Promise<{ job: ScrapeJob }> => {

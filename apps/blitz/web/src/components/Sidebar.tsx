@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Film, LayoutGrid, Plug, Settings2, Shuffle, SlidersHorizontal, Zap } from "lucide-react";
+import { Film, KeyRound, LayoutGrid, Plug, Settings2, Shuffle, SlidersHorizontal, Zap } from "lucide-react";
 import type { ProductProfile } from "../api";
 import type { Section } from "./SettingsModal";
 
@@ -61,6 +61,10 @@ export function Sidebar({
 
       <div className="nav-section">Workspace</div>
       <nav className="nav">
+        <button className="nav-item" onClick={() => onSettings("keys")}>
+          <KeyRound size={17} />
+          <span>API keys</span>
+        </button>
         <button className="nav-item" onClick={() => onSettings("integrations")}>
           <Plug size={17} />
           <span>Integrations</span>
@@ -94,7 +98,7 @@ export function Sidebar({
             <small>skipped</small>
           </div>
         </div>
-        <button className="nav-item" onClick={() => onSettings("integrations")}>
+        <button className="nav-item" onClick={() => onSettings("keys")}>
           <Settings2 size={17} />
           <span>Settings</span>
         </button>

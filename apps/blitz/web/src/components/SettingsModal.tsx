@@ -1,13 +1,13 @@
 import { motion } from "framer-motion";
-import { CheckCircle2, Loader2, Plug, Shuffle, SlidersHorizontal, Tag, X, XCircle, Zap } from "lucide-react";
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, Plug, Shuffle, SlidersHorizontal, Tag, X, XCircle, Zap } from "lucide-react";
 import { FORMAT_LABELS, type ContentFormat } from "../../../shared/types";
-import { type BlitzPreferences } from "../api";
+import { type BlitzPreferences, type Check, type KeyInfo } from "../api";
 import { useEffect, useState } from "react";
 import { api, DEMO, fmtCount, type IntegrationsStatus, type ProductProfile, type PublishingSettings, type ViralReference } from "../api";
 import { ProfileForm } from "./ProfileForm";
 import { serviceIcon, serviceLabel } from "./icons";
 
-export type Section = "integrations" | "blitz" | "publishing" | "brand" | "remix";
+export type Section = "keys" | "integrations" | "blitz" | "publishing" | "brand" | "remix";
 
 const BUFFER_APP = "https://publish.buffer.com";
 const PLATFORMS: { service: string; note?: string }[] = [
@@ -33,6 +33,9 @@ export function SettingsModal({
       <motion.div className="modal settings-modal" role="dialog" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 420, damping: 34 }} aria-label="Settings">
         <nav className="settings-nav">
           <div className="settings-label">SETTINGS</div>
+          <button className={section === "keys" ? "on" : ""} onClick={() => setSection("keys")}>
+            <KeyRound size={16} /> API keys
+          </button>
           <button className={section === "integrations" ? "on" : ""} onClick={() => setSection("integrations")}>
             <Plug size={16} /> Integrations
           </button>
@@ -53,6 +56,7 @@ export function SettingsModal({
           <button className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
+          {section === "keys" && <ApiKeys />}
           {section === "integrations" && <Integrations />}
           {section === "publishing" && <Publishing />}
           {section === "blitz" && <BlitzPrefs />}
@@ -384,7 +388,8 @@ function ConnectionTest() {
     try {
       setResult(await api.testIntegrations());
     } catch (e) {
-      setResult({ buffer: { ok: false, detail: (e as Error).message }, apify: { ok: false, detail: "" }, videos: { ok: false, detail: "" }, claude: { ok: false, detail: "" } });
+      const fail = { ok: false, detail: (e as Error).message };
+      setResult({ buffer: fail, apify: fail, videos: fail, claude: fail, public: fail });
     } finally {
       setBusy(false);
     }
@@ -394,6 +399,7 @@ function ConnectionTest() {
     ["apify", "Apify"],
     ["videos", "Videos"],
     ["claude", "Claude"],
+    ["public", "Public URL"],
   ];
   return (
     <div className="int-card">
@@ -556,5 +562,117 @@ function BlitzPrefs() {
       {error && <div className="banner-error">{error}</div>}
       {saved !== "idle" && <p className="muted small">{saved === "saving" ? "Saving…" : "Saved."}</p>}
     </>
+  );
+}
+
+export function ApiKeys() {
+  const [keys, setKeys] = useState<KeyInfo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () =>
+    api
+      .keys()
+      .then((r) => setKeys(r.keys))
+      .catch((e) => setError(e.message));
+  useEffect(() => {
+    void load();
+  }, []);
+
+  if (!keys) return <p className="muted">{error ?? "Loading…"}</p>;
+  const required = ["APIFY_TOKEN", "BUFFER_API_KEY", "ANTHROPIC_API_KEY", "PEXELS_API_KEY", "PUBLIC_BASE_URL"];
+  const done = keys.filter((k) => required.includes(k.name) && k.set).length;
+  return (
+    <>
+      <h2>API keys</h2>
+      <p className="muted">
+        Paste a key and press Save. It's tested right away and starts working immediately. Keys are stored only on the computer running Blitz
+        (data/keys.json) and are never shown in full again.
+      </p>
+      <div className="key-progress">
+        <div className="key-progress-bar">
+          <span style={{ width: `${(done / required.length) * 100}%` }} />
+        </div>
+        <small>
+          {done} of {required.length} essentials set
+        </small>
+      </div>
+      {keys.map((k) => (
+        <KeyRow key={k.name} info={k} essential={required.includes(k.name)} onSaved={load} />
+      ))}
+    </>
+  );
+}
+
+function KeyRow({ info, essential, onSaved }: { info: KeyInfo; essential: boolean; onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState<Check | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (v: string) => {
+    setBusy(true);
+    setError(null);
+    setTest(null);
+    try {
+      const r = await api.saveKey(info.name, v);
+      setTest(r.test);
+      setValue("");
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="int-card key-row">
+      <div className="int-head">
+        <div>
+          <b>
+            {info.label}
+            {essential && !info.set && <span className="pill-need">needed</span>}
+          </b>
+          <small>{info.purpose}</small>
+        </div>
+        <div className="int-right">
+          {info.set ? (
+            <span className="key-set" title={info.from === "env" ? "From .env" : "Saved in Settings"}>
+              <CheckCircle2 size={14} /> {info.preview}
+            </span>
+          ) : (
+            <span className="key-missing">Not set</span>
+          )}
+        </div>
+      </div>
+      <div className="input-row key-input">
+        <input
+          type={info.secret ? "password" : "text"}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={info.set ? "Paste a new value to replace it" : info.secret ? "Paste key" : "https://…"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && value.trim() && save(value)}
+        />
+        <button className="btn-primary" disabled={busy || !value.trim()} onClick={() => save(value)}>
+          {busy ? <Loader2 size={14} className="spin" /> : null} Save
+        </button>
+        {info.from === "settings" && (
+          <button className="btn-ghost" disabled={busy} onClick={() => save("")}>
+            Remove
+          </button>
+        )}
+      </div>
+      {info.getUrl && (
+        <a className="key-link" href={info.getUrl} target="_blank" rel="noreferrer">
+          Get your {info.label} key <ExternalLink size={11} />
+        </a>
+      )}
+      {error && <div className="banner-error">{error}</div>}
+      {test && (
+        <div className={`test-row ${test.ok ? "ok" : "fail"}`} style={{ marginTop: 10 }}>
+          {test.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+          <span>{test.detail}</span>
+        </div>
+      )}
+    </div>
   );
 }

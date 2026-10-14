@@ -70,6 +70,12 @@ export class ContentAI {
     return this.client !== null;
   }
 
+  /** Cheapest possible call to confirm the key works. */
+  async ping(): Promise<void> {
+    if (!this.client) throw new Error("ANTHROPIC_API_KEY is not set");
+    await this.client.models.retrieve(MODEL);
+  }
+
   async analyzeSite(url: string, pageText: string): Promise<ProfileDraft> {
     return this.structured(PROFILE_SYSTEM, `Website: ${url}\n\n<page>\n${pageText}\n</page>`, ProfileSchema);
   }
