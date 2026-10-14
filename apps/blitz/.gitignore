@@ -5,3 +5,6 @@ data/
 .env
 .env.*
 !.env.example
+.wrangler/
+cloudflare/worker-configuration.d.ts
+.sandbox-ca.crt

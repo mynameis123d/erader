@@ -143,6 +143,13 @@ async function findImage(deps: CardDeps, query: string, variant: number, used?: 
     used?.push({ kind: "photo", label: own.source === "website" ? "Your website" : "Your Media Bank", detail: own.title, url: own.sourceUrl ?? own.fileUrl });
     return own.fileUrl;
   }
+  // No tag match: your own website/product photos still beat stock.
+  const yours = deps.library.filter((c) => (c.kind ?? "video") === "image" && c.fileUrl && ["owned", "licensed", "cleared"].includes(c.rights));
+  if (yours.length) {
+    const pick = yours[variant % yours.length];
+    used?.push({ kind: "photo", label: pick.source === "website" ? "Your website" : "Your Media Bank", detail: pick.title, url: pick.sourceUrl ?? pick.fileUrl! });
+    return pick.fileUrl;
+  }
   const url = await deps.images.find(query, variant);
   if (url) used?.push({ kind: "photo", label: /pexels/.test(url) ? "Pexels photo" : "Public-domain photo (Openverse)", detail: `"${query}"`, url });
   return url;

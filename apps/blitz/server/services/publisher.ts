@@ -5,7 +5,10 @@ import { renderCard, type Aspect, type RenderOutput } from "./render.js";
 export interface PublishDeps {
   buffer: BufferClient;
   channels: BufferChannel[];
-  publicBaseUrl: string;
+  /** Base URL Buffer downloads /media files from (tunnel or deployment), when not using toPublicUrl. */
+  publicBaseUrl?: string | null;
+  /** Turns a local /media path into a URL Buffer can download (e.g. uploads it to Supabase). */
+  toPublicUrl?: (mediaPath: string) => Promise<string>;
   mediaDir: string;
   render?: typeof renderCard;
 }
@@ -30,7 +33,12 @@ export async function publishCard(card: BlitzCard, req: PublishRequest, deps: Pu
     if (!renders.has(key)) renders.set(key, render(card, aspect, video, deps.mediaDir));
     return renders.get(key)!;
   };
-  const abs = (p: string) => `${deps.publicBaseUrl}${p}`;
+  const urls = new Map<string, Promise<string>>();
+  const abs = (p: string): Promise<string> => {
+    if (/^https?:\/\//.test(p)) return Promise.resolve(p);
+    if (!urls.has(p)) urls.set(p, deps.toPublicUrl ? deps.toPublicUrl(p) : Promise.resolve(`${deps.publicBaseUrl ?? ""}${p}`));
+    return urls.get(p)!;
+  };
 
   const records: PublishRecord[] = [];
   for (const channelId of req.channelIds) {
@@ -48,8 +56,8 @@ export async function publishCard(card: BlitzCard, req: PublishRequest, deps: Pu
         title: card.slides[0]?.text.split("\n")[0],
         mode: req.mode,
         dueAt: req.dueAt,
-        images: plan.kind === "images" ? out.images.map(abs) : undefined,
-        video: plan.kind === "video" && out.video ? abs(out.video) : undefined,
+        images: plan.kind === "images" ? await Promise.all(out.images.map(abs)) : undefined,
+        video: plan.kind === "video" && out.video ? await abs(out.video) : undefined,
       });
       record.ok = true;
       record.bufferPostId = post.id;

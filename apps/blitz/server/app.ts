@@ -6,8 +6,9 @@ import { z } from "zod";
 import { MOODS, type Mood } from "../shared/scene.js";
 import type { BlitzCard, BufferChannel, IntegrationsStatus, ProductProfile, ViralReference } from "../shared/types.js";
 import { config as defaultConfig } from "./config.js";
-import { Db, type ScrapeJob } from "./db.js";
+import { Db, type DbShape, type ScrapeJob } from "./db.js";
 import { KEY_DEFS, KeyStore, mask } from "./keys.js";
+import { contentTypeFor, debounced, SupabaseStore } from "./storage.js";
 import { ContentAI } from "./services/ai.js";
 import { BufferClient, BufferError } from "./services/buffer.js";
 import { buildCard, planBatch, referencesFor } from "./services/generator.js";
@@ -18,7 +19,7 @@ import { renderCard } from "./services/render.js";
 import { ApifyClient, RUN_DONE, toBrollCandidates, toReferences } from "./services/trends.js";
 import { clipToVideo, ingestFile, ingestImage, isUsable, matchClip } from "./services/broll.js";
 import { VideoSearch } from "./services/videos.js";
-import { crawlForPrompt, crawlSite, heuristicFromCrawl } from "./services/website.js";
+import { crawlForPrompt, crawlFromMarkdown, crawlSite, heuristicFromCrawl, isThin } from "./services/website.js";
 
 type Config = typeof defaultConfig;
 
@@ -103,6 +104,7 @@ export function createApp(baseCfg: Config = defaultConfig) {
   fs.mkdirSync(baseCfg.mediaDir, { recursive: true });
   const db = new Db(path.join(baseCfg.dataDir, "db.json"));
   const keys = new KeyStore(path.join(baseCfg.dataDir, "keys.json"));
+  const cloud = baseCfg.supabaseUrl && baseCfg.supabaseKey ? new SupabaseStore(baseCfg.supabaseUrl, baseCfg.supabaseKey) : null;
   // Effective config: .env values, overridden by keys saved in Settings → API keys.
   const cfg: Config = { ...baseCfg, ...keys.overrides() };
   let ai = new ContentAI(cfg.anthropicApiKey);
@@ -111,6 +113,36 @@ export function createApp(baseCfg: Config = defaultConfig) {
   let apify = new ApifyClient(cfg.apifyToken, cfg.apifyTikTokActor);
   let buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
   let channelCache: { at: number; orgId: string; channels: BufferChannel[] } | null = null;
+
+  /** Media files that must outlive this machine (and that Buffer downloads) go to Supabase when configured. */
+  async function toPublicUrl(mediaPath: string): Promise<string> {
+    if (/^https?:\/\//.test(mediaPath)) return mediaPath;
+    if (!cloud) {
+      if (!cfg.publicBaseUrl) throw new HttpError(400, "Set a Public URL (or connect Supabase) so Buffer can download your media");
+      return `${cfg.publicBaseUrl}${mediaPath}`;
+    }
+    const rel = mediaPath.replace(/^\/media\//, "");
+    return cloud.publish(rel, fs.readFileSync(path.join(cfg.mediaDir, rel)), contentTypeFor(rel));
+  }
+
+  /** Keep the media file local (for rendering) and, with Supabase, give back its permanent public URL. */
+  const persistMedia = async (mediaPath: string) => (cloud ? toPublicUrl(mediaPath) : mediaPath);
+
+  /** Load state and keys from Supabase, then mirror every change back. */
+  const ready = (async () => {
+    if (!cloud) return;
+    await cloud.ensureBuckets();
+    const [state, savedKeys] = await Promise.all([cloud.loadJson<Partial<DbShape>>("db.json"), cloud.loadJson<Record<string, string>>("keys.json")]);
+    if (state) db.hydrate(state);
+    else await cloud.saveJson("db.json", db.state);
+    if (savedKeys) keys.hydrate(savedKeys);
+    reloadKeys();
+    const saveState = debounced(() => cloud.saveJson("db.json", db.state));
+    const saveKeys = debounced(() => cloud.saveJson("keys.json", keys.all()), 100);
+    db.onSave = saveState.schedule;
+    keys.onSave = saveKeys.schedule;
+    console.log(`[supabase] connected: ${db.state.cards.length} cards, ${db.state.broll.length} media items loaded`);
+  })();
 
   /** Rebuild every client after a key changes, so new keys work without a restart. */
   function reloadKeys() {
@@ -136,17 +168,17 @@ export function createApp(baseCfg: Config = defaultConfig) {
   }
 
   async function publish(card: BlitzCard, body: z.infer<typeof PublishBody>) {
-    if (!cfg.publicBaseUrl)
+    if (!cfg.publicBaseUrl && !cloud)
       throw new HttpError(
         400,
-        "PUBLIC_BASE_URL is not set. Buffer downloads media by URL, so this server must be reachable from the internet (deploy it or run a tunnel) and PUBLIC_BASE_URL must point at it.",
+        "Buffer needs to download your media: connect Supabase (cloud) or set a Public URL in Settings → API keys.",
       );
     if (card.video?.source === "library") {
       const clip = db.state.broll.find((c) => c.fileUrl === card.video!.url);
       if (!clip || !isUsable(clip)) throw new HttpError(403, "This post's B-roll clip is no longer cleared for use. Pick a new video first");
     }
     const { channels } = await bufferChannels();
-    const records = await publishCard(card, body, { buffer: buffer!, channels, publicBaseUrl: cfg.publicBaseUrl, mediaDir: cfg.mediaDir });
+    const records = await publishCard(card, body, { buffer: buffer!, channels, publicBaseUrl: cfg.publicBaseUrl, toPublicUrl, mediaDir: cfg.mediaDir });
     db.update(() => {
       card.publishes.push(...records);
       if (records.some((r) => r.ok)) card.status = "published";
@@ -209,8 +241,30 @@ export function createApp(baseCfg: Config = defaultConfig) {
     return generating;
   }
 
+  /**
+   * Keep content fresh without anyone in the app: pull new trending posts every 12 hours
+   * (when Apify is connected) and refill the feed. Runs on a timer locally and from the
+   * Cloudflare cron trigger in the cloud.
+   */
+  async function contentTick(): Promise<{ scraped: boolean; generated: number }> {
+    const out = { scraped: false, generated: 0 };
+    if (!db.state.profile) return out;
+    const last = db.state.scrapes[0];
+    const stale = !last || Date.now() - new Date(last.startedAt).getTime() > 12 * 3600_000;
+    const running = db.state.scrapes.some((j) => !RUN_DONE.has(j.status) && !j.imported);
+    if (apify.enabled && stale && !running) {
+      await startScrape(db.state.profile.keywords.slice(0, 5)).then(() => (out.scraped = true)).catch((e: Error) => console.warn("[tick] scrape failed:", e.message));
+    }
+    const pending = db.state.cards.filter((c) => c.status === "pending").length;
+    const target = db.state.preferences.feedTarget;
+    if (pending < target && !generating) out.generated = (await generate(Math.min(4, target - pending)).catch(() => [])).length;
+    return out;
+  }
+
   /** Background generation: keep the feed topped up to the target without the user waiting. */
   function startBackgroundGeneration(intervalMs = 45_000) {
+    const freshness = setInterval(() => void contentTick(), 3 * 3600_000);
+    void contentTick();
     const tick = () => {
       const pending = db.state.cards.filter((c) => c.status === "pending").length;
       const target = db.state.preferences.feedTarget;
@@ -219,7 +273,10 @@ export function createApp(baseCfg: Config = defaultConfig) {
     };
     const timer = setInterval(tick, intervalMs);
     tick();
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      clearInterval(freshness);
+    };
   }
 
   // ---------- Apify scrapes ----------
@@ -294,16 +351,29 @@ export function createApp(baseCfg: Config = defaultConfig) {
   app.get("/api/state", (_req, res) => {
     res.json({
       profile: db.state.profile,
-      capabilities: { claude: ai.enabled, pexels: Boolean(cfg.pexelsApiKey), photos: images.source, videos: videos.source, apify: apify.enabled, buffer: Boolean(buffer) },
+      capabilities: { claude: ai.enabled, pexels: Boolean(cfg.pexelsApiKey), photos: images.source, videos: videos.source, apify: apify.enabled, buffer: Boolean(buffer), storage: cloud ? "supabase" : "local" },
       counts: countByStatus(db.state.cards),
     });
   });
 
   app.post("/api/profile/analyze", async (req, res) => {
     const { url } = z.object({ url: z.string().min(3) }).parse(req.body);
-    const crawl = await crawlSite(url).catch((e: Error) => {
-      throw new HttpError(422, e.message);
-    });
+    // Plain fetch first; if the site blocks it or renders with JavaScript, read it through a real browser on Apify.
+    let crawl = await crawlSite(url).catch((e: Error) => e);
+    if ((crawl instanceof Error || isThin(crawl)) && apify.enabled) {
+      const viaBrowser = await apify
+        .readWebsite(crawl instanceof Error ? url : crawl.root)
+        .then(crawlFromMarkdown)
+        .catch((e: Error) => e);
+      if (!(viaBrowser instanceof Error)) {
+        // Keep anything the plain crawl found (product data, images) alongside the browser read.
+        crawl =
+          crawl instanceof Error
+            ? viaBrowser
+            : { ...viaBrowser, products: crawl.products, images: [...crawl.images, ...viaBrowser.images].slice(0, 24) };
+      } else if (crawl instanceof Error) throw new HttpError(422, `${crawl.message}. Apify browser read also failed: ${viaBrowser.message}`);
+    }
+    if (crawl instanceof Error) throw new HttpError(422, `${crawl.message}. Add your Apify token so Blitz can read sites that block plain requests.`);
     let draft = heuristicFromCrawl(crawl);
     let source: "claude" | "heuristic" = "heuristic";
     if (ai.enabled) {
@@ -421,14 +491,14 @@ export function createApp(baseCfg: Config = defaultConfig) {
     res.json({ card });
   });
 
-  app.post("/api/uploads", express.raw({ type: ["image/*"], limit: "15mb" }), (req, res) => {
+  app.post("/api/uploads", express.raw({ type: ["image/*"], limit: "15mb" }), async (req, res) => {
     const ext = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[req.headers["content-type"] ?? ""];
     if (!ext || !Buffer.isBuffer(req.body) || !req.body.length) throw new HttpError(400, "Upload a PNG, JPEG or WebP image");
     const dir = path.join(cfg.mediaDir, "uploads");
     fs.mkdirSync(dir, { recursive: true });
     const name = `${randomUUID()}.${ext}`;
     fs.writeFileSync(path.join(dir, name), req.body);
-    res.status(201).json({ url: `/media/uploads/${name}` });
+    res.status(201).json({ url: await persistMedia(`/media/uploads/${name}`) });
   });
 
   app.post("/api/cards/:id/render", async (req, res) => {
@@ -486,7 +556,8 @@ export function createApp(baseCfg: Config = defaultConfig) {
         throw new HttpError(422, e.message);
       },
     );
-    const clip = { id, kind: isImage ? ("image" as const) : ("video" as const), source: "upload" as const, title, tags, rights: "owned" as const, addedAt: new Date().toISOString(), ...file };
+    const stored = { ...file, fileUrl: await persistMedia(file.fileUrl), thumbnail: await persistMedia(file.thumbnail) };
+    const clip = { id, kind: isImage ? ("image" as const) : ("video" as const), source: "upload" as const, title, tags, rights: "owned" as const, addedAt: new Date().toISOString(), ...stored };
     db.update((d) => d.broll.unshift(clip));
     res.status(201).json({ clip });
   });
@@ -523,6 +594,8 @@ export function createApp(baseCfg: Config = defaultConfig) {
     if (!dl.ok) throw new HttpError(502, `Download failed (HTTP ${dl.status})`);
     const file = await ingestFile(cfg.mediaDir, clip.id, Buffer.from(await dl.arrayBuffer()));
     db.update(() => Object.assign(clip, file));
+    const stored = { fileUrl: await persistMedia(file.fileUrl), thumbnail: await persistMedia(file.thumbnail) };
+    db.update(() => Object.assign(clip, stored));
     res.json({ clip });
   });
 
@@ -625,8 +698,18 @@ export function createApp(baseCfg: Config = defaultConfig) {
         await ai.ping();
         return "Key works";
       }),
+    supabase: () =>
+      check(async () => {
+        if (!cloud) throw new Error("Not connected (data stays on this computer). Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to use the cloud");
+        await cloud.ensureBuckets();
+        await cloud.saveJson("healthcheck.json", { at: new Date().toISOString() });
+        const back = await cloud.loadJson<{ at: string }>("healthcheck.json");
+        if (!back?.at) throw new Error("Wrote to Supabase but couldn't read it back");
+        return `Connected. State, keys and media are stored in your Supabase project (${new URL(baseCfg.supabaseUrl!).host})`;
+      }),
     public: () =>
       check(async () => {
+        if (cloud) return "Not needed: Buffer downloads your media from Supabase";
         if (!cfg.publicBaseUrl) throw new Error("Not set");
         const res = await fetch(`${cfg.publicBaseUrl}/api/health`, { signal: AbortSignal.timeout(10000) }).catch(() => null);
         if (!res?.ok) throw new Error(`${cfg.publicBaseUrl} doesn't reach this server yet. Is the tunnel or deployment running?`);
@@ -646,9 +729,12 @@ export function createApp(baseCfg: Config = defaultConfig) {
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
+  // Called by the Cloudflare cron trigger (from inside Cloudflare, so it passes the local-only guard).
+  app.post("/api/cron/tick", async (_req, res) => res.json(await contentTick()));
+
   app.post("/api/integrations/test", async (_req, res) => {
-    const [b, a, v, c, p] = await Promise.all([TESTS.buffer(), TESTS.apify(), TESTS.videos(), TESTS.claude(), TESTS.public()]);
-    res.json({ buffer: b, apify: a, videos: v, claude: c, public: p });
+    const [b, a, v, c, p, sb] = await Promise.all([TESTS.buffer(), TESTS.apify(), TESTS.videos(), TESTS.claude(), TESTS.public(), TESTS.supabase()]);
+    res.json({ buffer: b, apify: a, videos: v, claude: c, public: p, supabase: sb });
   });
 
   // ---------- API keys (Settings → API keys) ----------
@@ -718,7 +804,7 @@ export function createApp(baseCfg: Config = defaultConfig) {
     res.status(500).json({ error: (err as Error).message ?? "Internal error" });
   });
 
-  return { app, db, startBackgroundGeneration };
+  return { app, db, ready, startBackgroundGeneration };
 }
 
 function countByStatus(cards: BlitzCard[]) {

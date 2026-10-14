@@ -10,7 +10,33 @@ paste your URL ──▶ brand profile ──▶ Blitz feed ──▶ ✓ approv
                     your site)            for your product)
 ```
 
-## Quick start
+## Run it (the preview link can't use your keys; this can)
+
+**On your computer (easiest):** install Node.js LTS from nodejs.org, then double-click
+**`Start Blitz.bat`** (Windows) or **`Start Blitz.command`** (Mac) in this folder. The first run installs
+everything; then the app opens at http://localhost:8787. Paste your keys when it asks.
+
+**In the cloud: Cloudflare + Supabase** (always on, updates itself, Buffer pulls media from Supabase):
+
+1. **Supabase** (stores your data, keys and media): create a project at
+   https://supabase.com/dashboard/new, then copy the Project URL and the `service_role` / secret key from
+   *Project Settings → API Keys*. Blitz creates its storage buckets itself; no SQL needed.
+2. **Cloudflare** (runs the app): Containers need the Workers Paid plan
+   (https://dash.cloudflare.com/?to=/:account/workers/plans). With Docker Desktop running:
+   ```bash
+   cd apps/blitz && npm run setup && npm run deploy:cloudflare
+   ```
+   This opens Cloudflare in your browser to authorize, asks once for the Supabase URL/key and an app password,
+   then builds and deploys. Open the `*.workers.dev` URL it prints, unlock with the app password, and paste your
+   API keys in **Settings → API keys**.
+3. **Automatic updates**: `.github/workflows/blitz.yml` tests every push and redeploys from `main`. Add these
+   repository secrets once (GitHub → Settings → Secrets and variables → Actions): `CLOUDFLARE_API_TOKEN`
+   (https://dash.cloudflare.com/profile/api-tokens, template "Edit Cloudflare Workers"), `CLOUDFLARE_ACCOUNT_ID`,
+   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_PASSWORD`.
+4. **Fresh content on its own**: a Cloudflare cron (every 3 hours) wakes Blitz to pull new trending TikToks (every
+   12 hours, with Apify connected) and to refill the Blitz feed, even when nobody has the app open.
+
+## Quick start (terminal)
 
 ```bash
 cd apps/blitz

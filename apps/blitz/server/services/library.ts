@@ -258,9 +258,16 @@ export function allReferences(imported: ViralReference[]): ViralReference[] {
   return [...imported, ...WALL_OF_TEXT_REFERENCES, ...BUILTIN_REFERENCES];
 }
 
-/** Pick the next references, preferring ones that were used least. */
+/** Pick the next references: least used first, real trending posts before templates. */
 export function pickReferences(refs: ViralReference[], usage: Map<string, number>, count: number): ViralReference[] {
-  const ranked = [...refs].sort((a, b) => (usage.get(a.id) ?? 0) - (usage.get(b.id) ?? 0) || Math.random() - 0.5);
+  // Least used first; among equals, real scraped/imported posts beat built-in templates, then most viewed.
+  const ranked = [...refs].sort(
+    (a, b) =>
+      (usage.get(a.id) ?? 0) - (usage.get(b.id) ?? 0) ||
+      Number(a.isTemplate) - Number(b.isTemplate) ||
+      (b.views ?? 0) - (a.views ?? 0) ||
+      Math.random() - 0.5,
+  );
   const out: ViralReference[] = [];
   for (let i = 0; out.length < count && ranked.length > 0; i++) out.push(ranked[i % ranked.length]);
   return out;

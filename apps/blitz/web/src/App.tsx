@@ -68,12 +68,12 @@ export function App() {
 
   return (
     <div className="shell">
-      <Sidebar page={page} onPage={setPage} profile={state.profile} counts={state.counts} onSettings={(s) => setSettings(s)} />
+      <Sidebar page={page} onPage={setPage} profile={state.profile} counts={state.counts} storage={state.capabilities.storage} onSettings={(s) => setSettings(s)} />
       <main className="main">
         {DEMO && (
           <div className="preview-banner">
-            Preview with sample cards and sample channels. Nothing is posted. Video cards show a moving scene here; the real app plays the
-            matching clip.
+            <b>This is a clickable preview, not the working app.</b> It has no server, so it can't use your keys, scrape or post. To run the
+            real app: open the apps/blitz folder and double-click “Start Blitz”, or deploy it with the Render button in the README.
           </div>
         )}
         <AnimatePresence mode="wait">

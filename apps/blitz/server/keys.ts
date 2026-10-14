@@ -31,6 +31,8 @@ export const KEY_DEFS: KeyDef[] = [
 export class KeyStore {
   private values: Record<string, string> = {};
 
+  onSave: (() => void) | null = null;
+
   constructor(private file: string) {
     try {
       if (fs.existsSync(file)) this.values = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -49,6 +51,17 @@ export class KeyStore {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.values, null, 2), { mode: 0o600 });
     fs.chmodSync(this.file, 0o600);
+    this.onSave?.();
+  }
+
+  all(): Record<string, string> {
+    return { ...this.values };
+  }
+
+  hydrate(values: Record<string, string>) {
+    this.values = { ...values };
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    fs.writeFileSync(this.file, JSON.stringify(this.values, null, 2), { mode: 0o600 });
   }
 
   /** Config fields filled from saved keys. */

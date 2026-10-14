@@ -27,7 +27,7 @@ export type RefMap = Record<string, ViralReference | undefined>;
 
 export interface AppState {
   profile: ProductProfile | null;
-  capabilities: { claude: boolean; pexels: boolean; photos: string; videos: string | null; apify: boolean; buffer: boolean };
+  capabilities: { claude: boolean; pexels: boolean; photos: string; videos: string | null; apify: boolean; buffer: boolean; storage?: "supabase" | "local" };
   counts: Record<string, number>;
 }
 
@@ -111,7 +111,7 @@ export const api = {
   abortScrape: (runId: string) => call<{ run: unknown }>(`/api/scrapes/${runId}/abort`, { method: "POST" }),
   preferences: () => call<BlitzPreferences>("/api/preferences"),
   savePreferences: (p: BlitzPreferences) => call<BlitzPreferences>("/api/preferences", { method: "PUT", json: p }),
-  testIntegrations: () => call<Record<"buffer" | "apify" | "videos" | "claude" | "public", Check>>("/api/integrations/test", { method: "POST" }),
+  testIntegrations: () => call<Record<"buffer" | "apify" | "videos" | "claude" | "public" | "supabase", Check>>("/api/integrations/test", { method: "POST" }),
   patchBroll: (id: string, patch: Partial<Pick<BrollClip, "title" | "tags" | "rights" | "rightsNote">>) =>
     call<{ clip: BrollClip }>(`/api/broll/${id}`, { method: "PATCH", json: patch }),
   fetchBroll: (id: string) => call<{ clip: BrollClip }>(`/api/broll/${id}/fetch`, { method: "POST" }),

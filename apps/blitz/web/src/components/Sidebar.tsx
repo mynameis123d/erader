@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Film, KeyRound, LayoutGrid, Plug, Settings2, Shuffle, SlidersHorizontal, Zap } from "lucide-react";
+import { Cloud, Film, HardDrive, KeyRound, LayoutGrid, Plug, Settings2, Shuffle, SlidersHorizontal, Zap } from "lucide-react";
 import type { ProductProfile } from "../api";
 import type { Section } from "./SettingsModal";
 
@@ -17,12 +17,14 @@ export function Sidebar({
   profile,
   counts,
   onSettings,
+  storage,
 }: {
   page: Page;
   onPage: (p: Page) => void;
   profile: ProductProfile;
   counts: Record<string, number>;
   onSettings: (s: Section) => void;
+  storage?: "supabase" | "local";
 }) {
   const host = (() => {
     try {
@@ -84,6 +86,10 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-foot">
+        <div className={`storage-pill ${storage === "supabase" ? "cloud" : ""}`} title={storage === "supabase" ? "Data, keys and media are saved in your Supabase project" : "Data is saved on this computer"}>
+          {storage === "supabase" ? <Cloud size={13} /> : <HardDrive size={13} />}
+          {storage === "supabase" ? "Synced to Supabase" : "Saved on this computer"}
+        </div>
         <div className="stat-row">
           <div>
             <b>{counts.published ?? 0}</b>

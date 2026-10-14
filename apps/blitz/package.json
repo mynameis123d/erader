@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build:preview": "vite build --mode demo",
     "check": "tsx scripts/check-keys.ts",
-    "setup": "node scripts/setup.mjs"
+    "setup": "node scripts/setup.mjs",
+    "deploy:cloudflare": "node scripts/deploy-cloudflare.mjs",
+    "cf:types": "wrangler types cloudflare/worker-configuration.d.ts",
+    "cf:check": "wrangler types cloudflare/worker-configuration.d.ts && tsc -p cloudflare/tsconfig.json"
   },
   "license": "MIT",
   "dependencies": {
@@ -24,6 +27,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
@@ -36,7 +40,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vite-plugin-singlefile": "^2.3.3",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "wrangler": "^4.151.0"
   },
   "private": true,
   "type": "module"

@@ -39,17 +39,34 @@ const empty = (): DbShape => ({
 export class Db {
   private data: DbShape;
 
+  /** Called after every local save, e.g. to mirror the state to Supabase. */
+  onSave: (() => void) | null = null;
+
   constructor(private file: string) {
     this.data = empty();
     if (fs.existsSync(file)) {
       try {
-        const saved = JSON.parse(fs.readFileSync(file, "utf8"));
-        const base = empty();
-        this.data = { ...base, ...saved, preferences: { ...base.preferences, ...saved.preferences, formatWeights: { ...base.preferences.formatWeights, ...saved.preferences?.formatWeights } } };
+        this.data = Db.migrate(JSON.parse(fs.readFileSync(file, "utf8")));
       } catch {
         fs.renameSync(file, `${file}.corrupt-${Date.now()}`);
       }
     }
+  }
+
+  /** Fill in fields added in later versions. */
+  static migrate(saved: Partial<DbShape>): DbShape {
+    const base = empty();
+    return {
+      ...base,
+      ...saved,
+      preferences: { ...base.preferences, ...saved.preferences, formatWeights: { ...base.preferences.formatWeights, ...saved.preferences?.formatWeights } },
+    } as DbShape;
+  }
+
+  /** Replace the whole state (loaded from Supabase at startup). */
+  hydrate(saved: Partial<DbShape>) {
+    this.data = Db.migrate(saved);
+    this.writeLocal();
   }
 
   get state(): DbShape {
@@ -67,6 +84,11 @@ export class Db {
   }
 
   private flush() {
+    this.writeLocal();
+    this.onSave?.();
+  }
+
+  private writeLocal() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));

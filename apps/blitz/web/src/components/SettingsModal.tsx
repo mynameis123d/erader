@@ -389,7 +389,7 @@ function ConnectionTest() {
       setResult(await api.testIntegrations());
     } catch (e) {
       const fail = { ok: false, detail: (e as Error).message };
-      setResult({ buffer: fail, apify: fail, videos: fail, claude: fail, public: fail });
+      setResult({ buffer: fail, apify: fail, videos: fail, claude: fail, public: fail, supabase: fail });
     } finally {
       setBusy(false);
     }
@@ -399,6 +399,7 @@ function ConnectionTest() {
     ["apify", "Apify"],
     ["videos", "Videos"],
     ["claude", "Claude"],
+    ["supabase", "Supabase"],
     ["public", "Public URL"],
   ];
   return (
@@ -406,7 +407,7 @@ function ConnectionTest() {
       <div className="int-head">
         <div>
           <b>Test connections</b>
-          <small>Calls Buffer, Apify and the video source with your keys and reports what comes back.</small>
+          <small>Calls Buffer, Apify, Supabase and the video source with your keys and reports what comes back.</small>
         </div>
         <div className="int-right">
           <button className="btn-primary" onClick={run} disabled={busy}>
@@ -583,6 +584,12 @@ export function ApiKeys() {
   return (
     <>
       <h2>API keys</h2>
+      {DEMO && (
+        <div className="banner-warn">
+          This preview has no server, so keys can't be saved or tested here. Start the real app (double-click “Start Blitz” in apps/blitz, or
+          deploy it) and paste your keys on this same page there.
+        </div>
+      )}
       <p className="muted">
         Paste a key and press Save. It's tested right away and starts working immediately. Keys are stored only on the computer running Blitz
         (data/keys.json) and are never shown in full again.

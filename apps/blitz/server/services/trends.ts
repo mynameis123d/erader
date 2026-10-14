@@ -10,7 +10,7 @@ import type { BrollClip, ViralReference } from "../../shared/types.js";
 // creator has given permission (see the B-roll routes in app.ts).
 
 type FetchLike = typeof fetch;
-const API = "https://api.apify.com/v2";
+const API = (process.env.APIFY_API_URL ?? "https://api.apify.com").replace(/\/+$/, "") + "/v2";
 
 /** Fields we read from Clockworks' TikTok scraper output. Everything is optional. */
 export interface ApifyTikTokItem {
@@ -107,6 +107,26 @@ export class ApifyClient {
     }
     if (run.status !== "SUCCEEDED") throw new Error(`Apify run ${runId} ended as ${run.status}`);
     return { run, items: await this.datasetItems(run.defaultDatasetId) };
+  }
+
+  /**
+   * Read a web page through Apify's RAG Web Browser (real Chrome), for sites that block
+   * plain requests or render their content with JavaScript.
+   */
+  async readWebsite(url: string): Promise<{ url: string; title: string; description: string; markdown: string }> {
+    if (!this.token) throw new Error("Set APIFY_TOKEN to read JavaScript-heavy websites");
+    const items = await this.call<{ metadata?: { url?: string; title?: string; description?: string }; markdown?: string; text?: string }[]>(
+      `/acts/apify~rag-web-browser/run-sync-get-dataset-items?timeout=120`,
+      { method: "POST", body: JSON.stringify({ query: url, maxResults: 1, outputFormats: ["markdown"], scrapingTool: "browser-playwright" }) },
+    );
+    const item = items[0];
+    if (!item?.markdown && !item?.text) throw new Error("Apify couldn't read that page");
+    return {
+      url: item.metadata?.url ?? url,
+      title: item.metadata?.title ?? "",
+      description: item.metadata?.description ?? "",
+      markdown: (item.markdown ?? item.text ?? "").slice(0, 40000),
+    };
   }
 
   /** Scraper input for hashtag search. */

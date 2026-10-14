@@ -2,6 +2,13 @@ import type { ProfileDraft } from "./ai.js";
 
 const MAX_TEXT = 20000;
 
+// Many stores (Shopify, Cloudflare-protected sites) refuse obvious bots, so ask like a normal browser.
+export const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36",
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
 export interface PageSummary {
   url: string;
   title: string;
@@ -20,7 +27,7 @@ export function normalizeUrl(raw: string): URL {
 export async function fetchPage(rawUrl: string): Promise<PageSummary> {
   const url = normalizeUrl(rawUrl);
   const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; BlitzBot/0.1)", Accept: "text/html" },
+    headers: BROWSER_HEADERS,
     redirect: "follow",
     signal: AbortSignal.timeout(15000),
   });
@@ -166,6 +173,15 @@ export function extractImages(pageUrl: string, html: string): SiteImage[] {
   return found;
 }
 
+const absolute = (src: string | undefined, base: string) => {
+  if (!src) return undefined;
+  try {
+    return new URL(src, base).toString();
+  } catch {
+    return undefined;
+  }
+};
+
 /** schema.org Product data from JSON-LD blocks (Shopify and most stores ship this). */
 export function extractProducts(pageUrl: string, html: string): SiteProduct[] {
   const out: SiteProduct[] = [];
@@ -181,7 +197,7 @@ export function extractProducts(pageUrl: string, html: string): SiteProduct[] {
         name: String(n.name ?? "").trim(),
         description: typeof n.description === "string" ? decode(n.description).slice(0, 300) : undefined,
         price: offers?.price ? `${offers.price} ${offers.priceCurrency ?? ""}`.trim() : undefined,
-        image: typeof img === "string" ? img : typeof img === "object" && img ? String((img as { url?: string }).url ?? "") || undefined : undefined,
+        image: absolute(typeof img === "string" ? img : typeof img === "object" && img ? (img as { url?: string }).url : undefined, pageUrl),
         url: pageUrl,
       });
     }
@@ -200,7 +216,7 @@ export function extractProducts(pageUrl: string, html: string): SiteProduct[] {
 async function getHtml(url: string, fetchImpl: FetchLike): Promise<{ url: string; html: string } | null> {
   try {
     const res = await fetchImpl(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; BlitzBot/0.2)", Accept: "text/html" },
+      headers: BROWSER_HEADERS,
       redirect: "follow",
       signal: AbortSignal.timeout(15000),
     });
@@ -249,4 +265,20 @@ export function heuristicFromCrawl(c: SiteCrawl): ProfileDraft {
     benefits: [...new Set(headings)].slice(0, 6),
     keywords: [...new Set([...c.products.slice(0, 3).map((p) => p.name.toLowerCase()), ...home.keywords])].slice(0, 10),
   };
+}
+
+/** True when a crawl found too little readable text, e.g. a JavaScript-only site. */
+export function isThin(c: SiteCrawl): boolean {
+  return c.pages.reduce((n, p) => n + p.text.length, 0) < 600;
+}
+
+/** Turn a page read through a real browser (Apify) into a crawl result. */
+export function crawlFromMarkdown(page: { url: string; title: string; description: string; markdown: string }): SiteCrawl {
+  const headings = [...page.markdown.matchAll(/^#{1,3}\s+(.+)$/gm)].map((m) => m[1].replace(/[*_`]/g, "").trim()).slice(0, 30);
+  const images = [...page.markdown.matchAll(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g)]
+    .map((m) => ({ url: m[2], alt: m[1], page: page.url }))
+    .filter((i) => !/\.svg(\?|$)|logo|icon|sprite|favicon|avatar|badge/i.test(i.url))
+    .slice(0, 24);
+  const text = page.markdown.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\s+/g, " ").trim();
+  return { root: page.url, pages: [{ url: page.url, title: page.title, description: page.description, headings, text: text.slice(0, MAX_TEXT) }], images, products: [] };
 }

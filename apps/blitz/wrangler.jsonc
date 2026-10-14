@@ -1,0 +1,23 @@
+// Cloudflare deploy for Blitz: `npm run deploy:cloudflare` (opens Cloudflare in your browser to log in the first time).
+// Needs the Workers Paid plan (Containers). Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_PASSWORD.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "blitz",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "BlitzContainer",
+      "image": "./Dockerfile",
+      "max_instances": 1,
+      "instance_type": "standard-2"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "BLITZ", "class_name": "BlitzContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BlitzContainer"] }],
+  // Every 3 hours: scrape trending posts (if Apify is set) and refill the Blitz feed.
+  "triggers": { "crons": ["17 */3 * * *"] }
+}

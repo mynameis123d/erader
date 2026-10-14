@@ -27,6 +27,9 @@ export const config = {
   openverse: opt("OPENVERSE") !== "off",
   pixabayApiKey: opt("PIXABAY_API_KEY"),
   apifyToken: opt("APIFY_TOKEN"),
+  /** Supabase project for cloud persistence (state, keys, media). Set as env/secrets, not in Settings. */
+  supabaseUrl: opt("SUPABASE_URL"),
+  supabaseKey: opt("SUPABASE_SERVICE_ROLE_KEY") ?? opt("SUPABASE_SECRET_KEY"),
   appPassword: opt("APP_PASSWORD"),
   apifyTikTokActor: opt("APIFY_TIKTOK_ACTOR") ?? "clockworks~tiktok-scraper",
 };

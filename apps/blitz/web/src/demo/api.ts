@@ -34,7 +34,7 @@ export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishingSettings,
 export type RefMap = Record<string, ViralReference | undefined>;
 export interface AppState {
   profile: ProductProfile | null;
-  capabilities: { claude: boolean; pexels: boolean; photos: string; videos: string | null; apify: boolean; buffer: boolean };
+  capabilities: { claude: boolean; pexels: boolean; photos: string; videos: string | null; apify: boolean; buffer: boolean; storage?: "supabase" | "local" };
   counts: Record<string, number>;
 }
 
@@ -368,8 +368,8 @@ let prefs: BlitzPreferences = { ...structuredClone(DEFAULT_PREFERENCES), voice: 
 const scrapes: ScrapeJob[] = [];
 
 const demoKeys = [
-  { name: "APIFY_TOKEN", label: "Apify", purpose: "Scrapes trending TikToks in your niche.", getUrl: "https://console.apify.com/settings/integrations", secret: true, set: true, from: "settings" as const, preview: "••••p3T" },
-  { name: "BUFFER_API_KEY", label: "Buffer", purpose: "Posts to your TikTok, Instagram and YouTube channels.", getUrl: "https://publish.buffer.com/settings/api", secret: true, set: true, from: "settings" as const, preview: "••••ixzl" },
+  { name: "APIFY_TOKEN", label: "Apify", purpose: "Scrapes trending TikToks in your niche.", getUrl: "https://console.apify.com/settings/integrations", secret: true, set: false, from: null, preview: null },
+  { name: "BUFFER_API_KEY", label: "Buffer", purpose: "Posts to your TikTok, Instagram and YouTube channels.", getUrl: "https://publish.buffer.com/settings/api", secret: true, set: false, from: null, preview: null },
   { name: "ANTHROPIC_API_KEY", label: "Claude (Anthropic)", purpose: "Reads your website and writes every post.", getUrl: "https://console.anthropic.com/settings/keys", secret: true, set: false, from: null, preview: null },
   { name: "PEXELS_API_KEY", label: "Pexels", purpose: "Real stock videos and photos matched to each post (free).", getUrl: "https://www.pexels.com/api/new/", secret: true, set: false, from: null, preview: null },
   { name: "PUBLIC_BASE_URL", label: "Public URL of this app", purpose: "Buffer downloads your rendered videos from here.", secret: false, set: false, from: null, preview: null },
@@ -383,11 +383,12 @@ export const api = {
   preferences: async () => clone(prefs),
   savePreferences: async (p: BlitzPreferences) => (prefs = clone(p)),
   testIntegrations: async () => ({
-    buffer: { ok: false, detail: "The preview can't call Buffer. Run the app with your keys to test" },
-    apify: { ok: false, detail: "The preview can't call Apify. Run the app with your keys to test" },
-    videos: { ok: false, detail: "The preview can't call Pexels" },
-    claude: { ok: false, detail: "The preview uses sample cards" },
-    public: { ok: false, detail: "The preview has no server" },
+    buffer: { ok: false, detail: "This is the preview: it has no server. Start the real app (Start Blitz) and run the test there" },
+    apify: { ok: false, detail: "Same: the preview can't make network calls" },
+    videos: { ok: false, detail: "Same" },
+    claude: { ok: false, detail: "Same" },
+    public: { ok: false, detail: "Same" },
+    supabase: { ok: false, detail: "Same" },
   }),
   scrapes: async () => ({ scrapes: clone(scrapes), apify: true }),
   startScrape: async (_b: { hashtags?: string[]; runId?: string }): Promise<{ job: ScrapeJob }> => {
