@@ -578,3 +578,12 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; gap: 5px; }
 .skeleton-card { height: 480px; position: relative; overflow: hidden; background: var(--surface-2); }
 .skeleton-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--surface) 80%, transparent) 50%, transparent 80%); background-size: 200% 100%; animation: shimmer 1.4s infinite linear; }
+
+/* ---------- editor slide strip ---------- */
+.slide-strip { list-style: none; margin: 12px 0 0; padding: 2px 2px 6px; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: thin; }
+.strip-thumb { position: relative; flex: none; width: 52px; aspect-ratio: 4 / 5; border-radius: 8px; overflow: hidden; cursor: grab; border: 2px solid transparent; container-type: size; background: #111; transition: border-color 0.15s; }
+.strip-thumb:active { cursor: grabbing; }
+.strip-thumb.on { border-color: var(--accent); }
+.strip-thumb .slide-text { font-size: 7cqw !important; }
+.strip-num { position: absolute; left: 3px; bottom: 3px; font-family: var(--mono); font-size: 9.5px; font-weight: 600; color: #fff; background: rgba(0, 0, 0, 0.55); border-radius: 4px; padding: 0 4px; }
+.strip-hint { display: block; margin-top: 2px; font-size: 11.5px; }

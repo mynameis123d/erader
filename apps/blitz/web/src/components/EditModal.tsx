@@ -1,9 +1,10 @@
-import { motion } from "framer-motion";
+import { motion, Reorder } from "framer-motion";
 import { useState } from "react";
 import { MOODS, type Mood } from "../../../shared/scene";
 import type { Slide } from "../../../shared/types";
 import { api, type BlitzCard } from "../api";
 import { CardMedia } from "./CardMedia";
+import { SlideView } from "./Slides";
 
 const SCENE_LABELS: Record<Mood, string> = {
   "dusk-forest": "Forest at dusk",
@@ -124,13 +125,33 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
         </button>
         <div className="edit-preview">
           <CardMedia card={draft} index={index} onIndex={setIndex} />
-          <div className="slide-tabs" hidden={isVideo}>
-            {draft.slides.map((s, i) => (
-              <button key={s.id} className={i === index ? "on" : ""} onClick={() => setIndex(i)}>
-                {i + 1}
-              </button>
-            ))}
-          </div>
+          {!isVideo && (
+            <Reorder.Group
+              axis="x"
+              className="slide-strip"
+              values={draft.slides}
+              onReorder={(slides: Slide[]) => {
+                const current = draft.slides[index]?.id;
+                setDraft((d) => ({ ...d, slides }));
+                setIndex(Math.max(0, slides.findIndex((x) => x.id === current)));
+              }}
+            >
+              {draft.slides.map((s, i) => (
+                <Reorder.Item
+                  key={s.id}
+                  value={s}
+                  className={`strip-thumb ${i === index ? "on" : ""}`}
+                  onClick={() => setIndex(i)}
+                  whileDrag={{ scale: 1.08, zIndex: 2, boxShadow: "0 10px 24px rgba(0,0,0,0.25)" }}
+                  title="Click to edit, drag to reorder"
+                >
+                  <SlideView slide={s} size="sm" />
+                  <span className="strip-num">{i + 1}</span>
+                </Reorder.Item>
+              ))}
+            </Reorder.Group>
+          )}
+          {!isVideo && <small className="muted strip-hint">Drag thumbnails to reorder</small>}
         </div>
 
         <div className="edit-form">

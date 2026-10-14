@@ -128,10 +128,16 @@ export function BlitzPage({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (editing || (e.target as HTMLElement).closest("input, textarea, select, [role=dialog]")) return;
+      const k = e.key.toLowerCase();
+      const mod = e.metaKey || e.ctrlKey;
+      if (e.altKey || (mod && k !== "z")) return;
+      // preventDefault so the key isn't also typed into the editor field that opens.
       if (e.key === "ArrowRight") decide("approve");
       else if (e.key === "ArrowLeft") decide("reject");
-      else if (e.key.toLowerCase() === "e" && top) setEditing(true);
-      else if ((e.key.toLowerCase() === "z" && (e.metaKey || e.ctrlKey)) || e.key.toLowerCase() === "u") void undo();
+      else if (k === "e" && !mod && top) setEditing(true);
+      else if ((k === "u" && !mod) || (k === "z" && mod)) void undo();
+      else return;
+      e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
