@@ -325,8 +325,13 @@ export function createApp(baseCfg: Config = defaultConfig) {
     return job;
   }
 
-  // Resume watching runs that were still going when the server stopped.
-  if (apify.enabled) for (const job of db.state.scrapes) if (!RUN_DONE.has(job.status) && !job.imported) watchScrape(job);
+  // Resume watching runs that were still going when the server stopped. Waits for `ready`
+  // so that with Supabase the saved state (and its unfinished runs) has been loaded first.
+  void ready
+    .then(() => {
+      if (apify.enabled) for (const job of db.state.scrapes) if (!RUN_DONE.has(job.status) && !job.imported) watchScrape(job);
+    })
+    .catch(() => undefined);
 
   const app = express();
   app.use(express.json({ limit: "2mb" }));
@@ -523,7 +528,7 @@ export function createApp(baseCfg: Config = defaultConfig) {
     const variant = Math.floor(Math.random() * 20);
     const own = matchClip(db.state.broll, q, variant);
     if (!own && !videos.enabled)
-      throw new HttpError(400, "No matching clip in your B-roll library. Add clips there, or add PEXELS_API_KEY (free) for stock footage");
+      throw new HttpError(400, "No matching clip in your Media Bank. Add clips there, or add a Pexels key (free) in Settings → API keys for stock footage");
     const clip = own ? clipToVideo(own, q) : await videos.find(q, variant);
     if (!clip) throw new HttpError(404, `No vertical clips found for "${q}". Try other words.`);
     db.update(() => {
