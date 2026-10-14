@@ -78,7 +78,7 @@ function WallOfText({ card, autoPlay }: { card: BlitzCard; autoPlay: boolean }) 
 function GreenScreen({ card, autoPlay }: { card: BlitzCard; autoPlay: boolean }) {
   const [muted, setMuted] = useState(true);
   const slide = card.slides[0];
-  const creatorSlide = { ...slide, id: `${slide.id}-c`, imageQuery: "interior", imageUrl: null, scene: null };
+  const creatorSlide = { ...slide, id: `${slide.id}-c`, imageQuery: "city street night", imageUrl: null, scene: null };
   return (
     <div className="carousel video-post green-screen">
       <div className="gs-top" style={{ backgroundImage: `url("${slide.imageUrl ?? sceneUrl(slide)}")` }}>

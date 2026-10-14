@@ -7,6 +7,7 @@ import { Onboarding } from "./components/Onboarding";
 import { QueuePage } from "./components/QueuePage";
 import { SettingsModal, type Section } from "./components/SettingsModal";
 import { Sidebar, type Page } from "./components/Sidebar";
+import { Shortcuts } from "./components/Shortcuts";
 import { Toaster } from "./components/Toaster";
 
 export function App() {
@@ -73,7 +74,7 @@ export function App() {
         {DEMO && (
           <div className="preview-banner">
             <b>This is a clickable preview, not the working app.</b> It has no server, so it can't use your keys, scrape or post. To run the
-            real app: open the apps/blitz folder and double-click “Start Blitz”, or deploy it with the Render button in the README.
+            real app: open the apps/blitz folder and double-click “Start Blitz”, or deploy it to Cloudflare (see the README).
           </div>
         )}
         <AnimatePresence mode="wait">
@@ -85,7 +86,7 @@ export function App() {
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            {page === "blitz" && <BlitzPage key={blitzKey} onCountsChange={refresh} />}
+            {page === "blitz" && <BlitzPage key={blitzKey} onCountsChange={refresh} caps={state.capabilities} onOpenSettings={(s) => setSettings(s)} />}
             {page === "content" && <QueuePage onCountsChange={refresh} />}
             {page === "broll" && <BrollPage />}
           </motion.div>
@@ -107,6 +108,7 @@ export function App() {
         )}
       </AnimatePresence>
       <Toaster />
+      <Shortcuts />
     </div>
   );
 }

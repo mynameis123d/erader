@@ -1,7 +1,9 @@
 import { AnimatePresence, animate, motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
 import { Brain, Check, ExternalLink, Link2, Pencil, RefreshCw, Sparkles, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type BlitzCard, type RefMap } from "../api";
+import { api, type AppState, type BlitzCard, type RefMap } from "../api";
+import type { Section } from "./SettingsModal";
+import { SetupChecklist } from "./SetupChecklist";
 import { CardMedia, formatLabel } from "./CardMedia";
 import { EditModal } from "./EditModal";
 import { RemixedFrom } from "./RemixedFrom";
@@ -14,7 +16,35 @@ const SWIPE_VELOCITY = 650;
 
 type Decision = "approve" | "reject";
 
-export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
+const WRITING_STEPS = ["Reading what's trending in your niche", "Matching formats to your brand", "Writing hooks and captions", "Picking footage and photos"];
+
+function WritingSteps() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(s + 1, WRITING_STEPS.length - 1)), 1600);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <ol className="writing-steps">
+      {WRITING_STEPS.map((label, i) => (
+        <motion.li key={label} initial={{ opacity: 0, x: -6 }} animate={{ opacity: i <= step ? 1 : 0.35, x: 0 }} transition={{ delay: i * 0.08 }} className={i < step ? "done" : i === step ? "now" : ""}>
+          <span className="ws-dot">{i < step ? <Check size={10} strokeWidth={3} /> : null}</span>
+          {label}
+        </motion.li>
+      ))}
+    </ol>
+  );
+}
+
+export function BlitzPage({
+  onCountsChange,
+  caps,
+  onOpenSettings,
+}: {
+  onCountsChange: () => void;
+  caps?: AppState["capabilities"];
+  onOpenSettings?: (s: Section) => void;
+}) {
   const [cards, setCards] = useState<BlitzCard[]>([]);
   const [refs, setRefs] = useState<RefMap>({});
   const [loading, setLoading] = useState(true);
@@ -26,6 +56,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
   const [lastDecided, setLastDecided] = useState<{ card: BlitzCard; decision: Decision } | null>(null);
   const [session, setSession] = useState({ approved: 0, skipped: 0 });
   const busy = useRef(false);
+  const undoRef = useRef<() => Promise<void>>(async () => undefined);
 
   const top = cards[0];
 
@@ -73,7 +104,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
         .decide(top.id, decision)
         .then((r) => {
           if (r.publishing) toast.success(`“${top.theme}” is on its way to your channels`);
-          else if (decision === "approve") toast.info(`Approved “${top.theme}”. Find it under Content`);
+          else if (decision === "approve") toast.info(`Approved “${top.theme}”`, { label: "Undo", run: () => void undoRef.current() });
           onCountsChange();
         })
         .catch((e) => toast.error(e.message));
@@ -91,6 +122,8 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
     setCards((c) => [card, ...c]);
     onCountsChange();
   }, [lastDecided, onCountsChange]);
+
+  undoRef.current = undo;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -130,6 +163,8 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
           </button>
         </div>
       </header>
+
+      {caps && onOpenSettings && <SetupChecklist caps={caps} onOpen={onOpenSettings} />}
 
       <div className="stage">
         <section className="side-panel left">
@@ -172,7 +207,7 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
             {loading || (!top && generating) ? (
               <div className="card-skeleton">
                 <div className="shimmer" />
-                <span>{loading ? "Loading…" : "Finding formats that work for you…"}</span>
+                {loading ? <span>Loading…</span> : <WritingSteps />}
               </div>
             ) : !top ? (
               <div className="deck-empty">
@@ -333,6 +368,11 @@ function SwipeCard({
   const rotate = useTransform(x, [-300, 0, 300], [-14, 0, 14]);
   const yes = useTransform(x, [20, SWIPE_DISTANCE], [0, 1]);
   const no = useTransform(x, [-SWIPE_DISTANCE, -20], [1, 0]);
+  const glow = useTransform(x, [-SWIPE_DISTANCE, 0, SWIPE_DISTANCE], [
+    "0 30px 60px -20px rgba(229,72,77,0.55), 0 0 0 3px rgba(229,72,77,0.7)",
+    "0 30px 60px -20px rgba(23,23,26,0.35), 0 0 0 0px rgba(0,0,0,0)",
+    "0 30px 60px -20px rgba(19,163,90,0.55), 0 0 0 3px rgba(19,163,90,0.7)",
+  ]);
 
   const onDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY) onDecide("approve");
@@ -343,7 +383,7 @@ function SwipeCard({
   return (
     <motion.div
       className="swipe-card"
-      style={{ x, rotate, zIndex: 5 }}
+      style={{ x, rotate, zIndex: 5, boxShadow: glow }}
       drag="x"
       dragElastic={0.9}
       dragConstraints={{ left: 0, right: 0 }}

@@ -430,7 +430,7 @@ export const api = {
   },
   state: async (): Promise<AppState> => ({
     profile,
-    capabilities: { claude: true, pexels: false, photos: "scenes", videos: null, apify: false, buffer: true },
+    capabilities: { claude: false, pexels: false, photos: "scenes", videos: null, apify: false, buffer: false, storage: "local" },
     counts: counts(),
   }),
   analyze: async (_url: string): Promise<{ profile: Omit<ProductProfile, "updatedAt">; source: string }> => {

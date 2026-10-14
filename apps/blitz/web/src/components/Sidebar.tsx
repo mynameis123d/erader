@@ -56,7 +56,11 @@ export function Sidebar({
             {page === id && <motion.span layoutId="nav-pill" className="nav-pill" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
             <Icon size={17} />
             <span>{label}</span>
-            {id === "content" && counts.approved > 0 && <span className="nav-count">{counts.approved}</span>}
+            {id === "content" && counts.approved > 0 && (
+              <motion.span key={counts.approved} className="nav-count" initial={{ scale: 1.6 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 14 }}>
+                {counts.approved}
+              </motion.span>
+            )}
           </button>
         ))}
       </nav>

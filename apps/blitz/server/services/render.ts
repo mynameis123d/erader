@@ -300,7 +300,7 @@ export async function renderGreenScreen(card: BlitzCard, mediaDir: string): Prom
 
   const creator = card.video ? await download(card.video.url, path.join(dir, "creator.mp4"), mediaDir) : null;
   const still = path.join(dir, "creator-still.png");
-  if (!creator) fs.writeFileSync(still, await renderSlide({ ...slide, id: `${slide.id}-c`, imageUrl: null, imageQuery: "interior", text: "" }, "9:16", mediaDir));
+  if (!creator) fs.writeFileSync(still, await renderSlide({ ...slide, id: `${slide.id}-c`, imageUrl: null, imageQuery: "city street night", text: "" }, "9:16", mediaDir));
   await renderSegment({ clip: creator, still, overlay: path.join(dir, "overlay.png"), seconds: readingSeconds(slide.text), layout: "bottom", out: path.join(dir, "video.mp4") });
   fs.copyFileSync(path.join(dir, "overlay.png"), path.join(dir, "cover.png"));
   return { images: [url("cover.png")], video: url("video.mp4") };
