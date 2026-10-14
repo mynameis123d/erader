@@ -304,3 +304,7 @@ npm run build
 ## License
 
 MIT
+
+## Apps
+
+- [`apps/blitz`](apps/blitz/README.md): **Blitz Mode**, a swipe-to-approve feed of AI-remixed short-form content (modeled on Fastlane), published to TikTok, Instagram and YouTube Shorts through Buffer. It is a standalone package: `cd apps/blitz && npm install && npm run dev`.
