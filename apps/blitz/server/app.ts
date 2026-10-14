@@ -14,7 +14,8 @@ import { ImageSearch } from "./services/images.js";
 import { allReferences, pickReferences } from "./services/library.js";
 import { publishCard } from "./services/publisher.js";
 import { renderCard } from "./services/render.js";
-import { TrendScout } from "./services/trends.js";
+import { ApifyClips, TrendScout } from "./services/trends.js";
+import { clipToVideo, ingestFile, isUsable, matchClip } from "./services/broll.js";
 import { VideoSearch } from "./services/videos.js";
 import { fetchPage, heuristicProfile, pageForPrompt } from "./services/website.js";
 
@@ -95,6 +96,7 @@ export function createApp(cfg: Config = defaultConfig) {
   const images = new ImageSearch(cfg.pexelsApiKey, cfg.openverse);
   const videos = new VideoSearch(cfg.pexelsApiKey, cfg.pixabayApiKey);
   const trends = new TrendScout(cfg.apifyToken, cfg.apifyTikTokActor);
+  const apifyClips = new ApifyClips(cfg.apifyToken, cfg.apifyTikTokActor);
   const buffer = cfg.bufferApiKey ? new BufferClient(cfg.bufferApiKey, cfg.bufferEndpoint) : null;
 
   let channelCache: { at: number; orgId: string; channels: BufferChannel[] } | null = null;
@@ -117,6 +119,10 @@ export function createApp(cfg: Config = defaultConfig) {
         400,
         "PUBLIC_BASE_URL is not set. Buffer downloads media by URL, so this server must be reachable from the internet (deploy it or run a tunnel) and PUBLIC_BASE_URL must point at it.",
       );
+    if (card.video?.source === "library") {
+      const clip = db.state.broll.find((c) => c.fileUrl === card.video!.url);
+      if (!clip || !isUsable(clip)) throw new HttpError(403, "This post's B-roll clip is no longer cleared for use. Pick a new video first");
+    }
     const { channels } = await bufferChannels();
     const records = await publishCard(card, body, { buffer: buffer!, channels, publicBaseUrl: cfg.publicBaseUrl, mediaDir: cfg.mediaDir });
     db.update(() => {
@@ -165,7 +171,7 @@ export function createApp(cfg: Config = defaultConfig) {
       ...pickReferences(all.filter((r) => r.format === "video"), usage, videoCount),
       ...pickReferences(all.filter((r) => r.format !== "video"), usage, count - videoCount),
     ];
-    generating = Promise.all(refs.map((r) => buildCard(profile, r, ai, images, videos)))
+    generating = Promise.all(refs.map((r) => buildCard(profile, r, ai, images, videos, db.state.broll)))
       .then((cards) => {
         db.update((d) => d.cards.push(...cards));
         return cards;
@@ -313,15 +319,89 @@ export function createApp(cfg: Config = defaultConfig) {
   app.post("/api/cards/:id/video", async (req, res) => {
     const { query } = z.object({ query: z.string().optional() }).parse(req.body ?? {});
     const card = requireCard(req.params.id);
-    if (!videos.enabled) throw new HttpError(400, "Add PEXELS_API_KEY (free) or PIXABAY_API_KEY to apps/blitz/.env to get background videos");
     const q = query?.trim() || card.video?.query || card.slides[0]?.imageQuery || "";
-    const clip = await videos.find(q, Math.floor(Math.random() * 20));
+    const variant = Math.floor(Math.random() * 20);
+    const own = matchClip(db.state.broll, q, variant);
+    if (!own && !videos.enabled)
+      throw new HttpError(400, "No matching clip in your B-roll library. Add clips there, or add PEXELS_API_KEY (free) for stock footage");
+    const clip = own ? clipToVideo(own, q) : await videos.find(q, variant);
     if (!clip) throw new HttpError(404, `No vertical clips found for "${q}". Try other words.`);
     db.update(() => {
       card.video = clip;
       card.slides[0].imageQuery = q;
     });
     res.json({ card });
+  });
+
+  // ---------- B-roll library ----------
+  const requireClip = (id: string) => {
+    const c = db.state.broll.find((x) => x.id === id);
+    if (!c) throw new HttpError(404, "Clip not found");
+    return c;
+  };
+
+  app.get("/api/broll", (_req, res) => res.json({ clips: db.state.broll, apify: apifyClips.enabled }));
+
+  app.post("/api/broll/upload", express.raw({ type: ["video/*"], limit: "300mb" }), async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new HttpError(400, "Upload an MP4 or MOV video");
+    const id = `up-${randomUUID().slice(0, 8)}`;
+    const title = String(req.query.title ?? "Uploaded clip").slice(0, 90);
+    const tags = String(req.query.tags ?? "")
+      .split(/[,\s]+/)
+      .map((t) => t.replace(/^#/, "").toLowerCase())
+      .filter(Boolean);
+    const file = await ingestFile(cfg.mediaDir, id, req.body).catch((e: Error) => {
+      throw new HttpError(422, e.message);
+    });
+    const clip = { id, source: "upload" as const, title, tags, rights: "owned" as const, addedAt: new Date().toISOString(), ...file };
+    db.update((d) => d.broll.unshift(clip));
+    res.status(201).json({ clip });
+  });
+
+  app.post("/api/broll/discover", async (req, res) => {
+    const { query } = z.object({ query: z.string().optional() }).parse(req.body ?? {});
+    const tags = query?.trim() ? query.split(/[,\s]+/) : requireProfile().keywords;
+    const found = await apifyClips.discover(tags);
+    const known = new Set(db.state.broll.map((c) => c.id));
+    const fresh = found.filter((c) => !known.has(c.id));
+    db.update((d) => d.broll.push(...fresh));
+    res.json({ added: fresh.length, clips: fresh });
+  });
+
+  app.patch("/api/broll/:id", (req, res) => {
+    const body = z
+      .object({
+        title: z.string().max(90).optional(),
+        tags: z.array(z.string()).optional(),
+        rights: z.enum(["owned", "licensed", "needs_permission", "requested", "cleared", "declined"]).optional(),
+        rightsNote: z.string().max(500).optional(),
+      })
+      .parse(req.body);
+    const clip = requireClip(req.params.id);
+    if (body.rights === "cleared" && !(body.rightsNote ?? clip.rightsNote)?.trim())
+      throw new HttpError(400, "Add a note on how the creator gave permission (e.g. 'Approved by DM on Oct 14') before clearing a clip");
+    db.update(() => Object.assign(clip, body));
+    res.json({ clip });
+  });
+
+  /** Download a TikTok clip into the library. Only for clips the creator has cleared. */
+  app.post("/api/broll/:id/fetch", async (req, res) => {
+    const clip = requireClip(req.params.id);
+    if (clip.source !== "tiktok" || !clip.sourceUrl) throw new HttpError(400, "Only TikTok clips can be fetched");
+    if (clip.rights !== "cleared") throw new HttpError(403, "Mark this clip as cleared (creator permission) before downloading it");
+    const media = await apifyClips.mediaUrl(clip.sourceUrl);
+    const dl = await fetch(media, { signal: AbortSignal.timeout(120000) });
+    if (!dl.ok) throw new HttpError(502, `Download failed (HTTP ${dl.status})`);
+    const file = await ingestFile(cfg.mediaDir, clip.id, Buffer.from(await dl.arrayBuffer()));
+    db.update(() => Object.assign(clip, file));
+    res.json({ clip });
+  });
+
+  app.delete("/api/broll/:id", (req, res) => {
+    const clip = requireClip(req.params.id);
+    db.update((d) => (d.broll = d.broll.filter((c) => c !== clip)));
+    for (const ext of ["mp4", "jpg"]) fs.rmSync(path.join(cfg.mediaDir, "broll", `${clip.id}.${ext}`), { force: true });
+    res.json({ ok: true, usable: isUsable(clip) });
   });
 
   app.get("/api/settings/publishing", (_req, res) => res.json(db.state.publishing));

@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { useState } from "react";
 import { MOODS, type Mood } from "../../../shared/scene";
 import type { Slide } from "../../../shared/types";
@@ -116,8 +117,8 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal edit-modal" role="dialog" aria-label="Edit content">
+    <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div className="modal edit-modal" role="dialog" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 420, damping: 34 }} aria-label="Edit content">
         <button className="modal-close" onClick={onClose} aria-label="Close">
           ×
         </button>
@@ -243,7 +244,7 @@ export function EditModal({ card, startIndex = 0, onClose, onSaved }: Props) {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

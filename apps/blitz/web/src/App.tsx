@@ -1,17 +1,19 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { api, DEMO, type AppState } from "./api";
 import { BlitzPage } from "./components/BlitzPage";
-import { ProfileForm } from "./components/ProfileForm";
+import { BrollPage } from "./components/BrollPage";
+import { Onboarding } from "./components/Onboarding";
 import { QueuePage } from "./components/QueuePage";
-import { SettingsModal } from "./components/SettingsModal";
-
-type Page = "blitz" | "queue";
+import { SettingsModal, type Section } from "./components/SettingsModal";
+import { Sidebar, type Page } from "./components/Sidebar";
+import { Toaster } from "./components/Toaster";
 
 export function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<Page>("blitz");
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState<Section | null>(null);
   const [blitzKey, setBlitzKey] = useState(0);
 
   const refresh = useCallback(() => {
@@ -22,58 +24,62 @@ export function App() {
   }, []);
   useEffect(refresh, [refresh]);
 
-  if (error) return <div className="center-msg">Can't reach the Blitz API: {error}</div>;
-  if (!state) return <div className="center-msg">Loading…</div>;
-
-  if (!state.profile) {
+  if (error)
     return (
-      <div className="onboarding">
-        <div className="brand-mark">⚡ Blitz</div>
-        <h1>What are we marketing?</h1>
-        <p className="muted">Paste your website, app or store link. Blitz reads your product, audience and tone, then remixes viral formats for it.</p>
-        <ProfileForm initial={null} onSaved={refresh} />
+      <div className="fullscreen-msg">
+        <b>Can't reach the Blitz server</b>
+        <span>{error}</span>
       </div>
     );
-  }
+  if (!state)
+    return (
+      <div className="fullscreen-msg">
+        <span className="spinner" />
+      </div>
+    );
+  if (!state.profile) return <Onboarding onDone={refresh} />;
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand-mark">⚡ Blitz</div>
-        <nav>
-          <button className={page === "blitz" ? "on" : ""} onClick={() => setPage("blitz")}>
-            Blitz
-          </button>
-          <button className={page === "queue" ? "on" : ""} onClick={() => setPage("queue")}>
-            Approved {state.counts.approved ? <span className="count">{state.counts.approved}</span> : null}
-          </button>
-        </nav>
-        <div className="topbar-right">
-          <span className="product-name">{state.profile.name}</span>
-          <button className="icon-btn" aria-label="Settings" onClick={() => setSettings(true)}>
-            ⚙
-          </button>
-        </div>
-      </header>
-      {DEMO && (
-        <div className="preview-banner">
-          Preview with sample cards and sample channels. Nothing is posted. Here, Wall of Text cards show a moving painted scene; the real app plays a matching Pexels clip.
-        </div>
-      )}
-      <main>
-        {page === "blitz" ? <BlitzPage key={blitzKey} onCountsChange={refresh} /> : <QueuePage onCountsChange={refresh} />}
+    <div className="shell">
+      <Sidebar page={page} onPage={setPage} profile={state.profile} counts={state.counts} onSettings={(s) => setSettings(s)} />
+      <main className="main">
+        {DEMO && (
+          <div className="preview-banner">
+            Preview with sample cards and sample channels. Nothing is posted. Video cards show a moving scene here; the real app plays the
+            matching clip.
+          </div>
+        )}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={page}
+            className="page"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+          >
+            {page === "blitz" && <BlitzPage key={blitzKey} onCountsChange={refresh} />}
+            {page === "content" && <QueuePage onCountsChange={refresh} />}
+            {page === "broll" && <BrollPage />}
+          </motion.div>
+        </AnimatePresence>
       </main>
-      {settings && (
-        <SettingsModal
-          profile={state.profile}
-          onClose={() => setSettings(false)}
-          onProfileSaved={() => {
-            setSettings(false);
-            setBlitzKey((k) => k + 1);
-            refresh();
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {settings && (
+          <SettingsModal
+            key="settings"
+            profile={state.profile}
+            initial={settings}
+            onClose={() => setSettings(null)}
+            onProfileSaved={() => {
+              setSettings(null);
+              setBlitzKey((k) => k + 1);
+              refresh();
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <Toaster />
     </div>
   );
 }

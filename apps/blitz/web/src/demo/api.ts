@@ -3,6 +3,7 @@
 import { moodFor, paintScene, type Ctx2D } from "../../../shared/scene";
 import type {
   BlitzCard,
+  BrollClip,
   BufferChannel,
   IntegrationsStatus,
   ProductProfile,
@@ -12,9 +13,11 @@ import type {
   Slide,
   ViralReference,
 } from "../../../shared/types";
+import { sceneUrl } from "../scene-cache";
 import { templateRemix } from "../../../server/services/generator";
 import { BUILTIN_REFERENCES, WALL_OF_TEXT_REFERENCES } from "../../../server/services/library";
 
+export type { BrollClip };
 export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishingSettings, PublishRecord, PublishRequest, ViralReference };
 export type RefMap = Record<string, ViralReference | undefined>;
 export interface AppState {
@@ -279,7 +282,40 @@ function renderPreview(card: BlitzCard, aspect: "4:5" | "9:16"): string[] {
 
 let publishing: PublishingSettings = { autoPublish: true, channelIds: ["demo-tt", "demo-ig", "demo-yt"], mode: "addToQueue", slideshowsAsVideo: false };
 
+const now = new Date().toISOString();
+let broll: BrollClip[] = [
+  { id: "up-1", source: "upload", title: "morning run sunset path", tags: ["running", "sunset"], rights: "owned", fileUrl: null, addedAt: now, duration: 12 },
+  { id: "tt-1", source: "tiktok", title: "5am run club, nobody talks about the sunrise", tags: ["running", "sneakers"], creator: "runwithmaya", sourceUrl: "https://www.tiktok.com/", views: 2400000, likes: 310000, rights: "needs_permission", fileUrl: null, addedAt: now },
+  { id: "tt-2", source: "tiktok", title: "pickup game at the park after work", tags: ["basketball"], creator: "courtside.daily", sourceUrl: "https://www.tiktok.com/", views: 880000, likes: 92000, rights: "requested", fileUrl: null, addedAt: now },
+  { id: "tt-3", source: "tiktok", title: "outfit check: one pair, three looks", tags: ["sneakers", "ootd"], creator: "styledbyjo", sourceUrl: "https://www.tiktok.com/", views: 1310000, likes: 154000, rights: "cleared", rightsNote: "Approved by DM", fileUrl: null, addedAt: now },
+];
+
 export const api = {
+  broll: async () => {
+    // Painted stand-ins for thumbnails: the preview can't load TikTok covers.
+    for (const c of broll) if (!c.thumbnail) c.thumbnail = sceneUrl({ id: c.id, imageQuery: `${c.title} ${c.tags.join(" ")}`, scene: null });
+    return { clips: clone(broll), apify: true };
+  },
+  uploadBroll: async (file: File, title: string, tags: string): Promise<{ clip: BrollClip }> => {
+    const clip: BrollClip = { id: `up-${crypto.randomUUID().slice(0, 6)}`, source: "upload", title, tags: tags.split(/[,\s]+/).filter(Boolean), rights: "owned", fileUrl: URL.createObjectURL(file), addedAt: new Date().toISOString() };
+    broll.unshift(clip);
+    return { clip: clone(clip) };
+  },
+  discoverBroll: async (_q?: string): Promise<{ added: number; clips: BrollClip[] }> => {
+    throw new Error("TikTok search runs on the server with your Apify token. It isn't available in the preview");
+  },
+  patchBroll: async (id: string, patch: Partial<Pick<BrollClip, "title" | "tags" | "rights" | "rightsNote">>) => {
+    const c = broll.find((x) => x.id === id)!;
+    Object.assign(c, patch);
+    return { clip: clone(c) };
+  },
+  fetchBroll: async (_id: string): Promise<{ clip: BrollClip }> => {
+    throw new Error("Downloading runs on the server through Apify. It isn't available in the preview");
+  },
+  deleteBroll: async (id: string) => {
+    broll = broll.filter((x) => x.id !== id);
+    return { ok: true };
+  },
   newVideo: async (_id: string, _query?: string): Promise<{ card: BlitzCard }> => {
     throw new Error("Video search runs on the server with your Pexels key. The preview shows a moving painted scene instead");
   },

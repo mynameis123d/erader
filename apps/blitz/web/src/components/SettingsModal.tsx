@@ -1,9 +1,11 @@
+import { motion } from "framer-motion";
+import { Plug, Shuffle, Tag, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, DEMO, fmtCount, type IntegrationsStatus, type ProductProfile, type PublishingSettings, type ViralReference } from "../api";
 import { ProfileForm } from "./ProfileForm";
 import { serviceIcon, serviceLabel } from "./icons";
 
-type Section = "integrations" | "publishing" | "brand" | "remix";
+export type Section = "integrations" | "publishing" | "brand" | "remix";
 
 const BUFFER_APP = "https://publish.buffer.com";
 const PLATFORMS: { service: string; note?: string }[] = [
@@ -25,21 +27,21 @@ export function SettingsModal({
 }) {
   const [section, setSection] = useState<Section>(initial);
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal settings-modal" role="dialog" aria-label="Settings">
+    <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div className="modal settings-modal" role="dialog" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 420, damping: 34 }} aria-label="Settings">
         <nav className="settings-nav">
           <div className="settings-label">SETTINGS</div>
           <button className={section === "integrations" ? "on" : ""} onClick={() => setSection("integrations")}>
-            <span aria-hidden>🔌</span> Integrations
+            <Plug size={16} /> Integrations
           </button>
           <button className={section === "publishing" ? "on" : ""} onClick={() => setSection("publishing")}>
-            <span aria-hidden>⚡</span> One-click publishing
+            <Zap size={16} /> One-click publishing
           </button>
           <button className={section === "brand" ? "on" : ""} onClick={() => setSection("brand")}>
-            <span aria-hidden>🏷️</span> Brand profile
+            <Tag size={16} /> Brand profile
           </button>
           <button className={section === "remix" ? "on" : ""} onClick={() => setSection("remix")}>
-            <span aria-hidden>🔀</span> Remix library
+            <Shuffle size={16} /> Remix library
           </button>
         </nav>
         <div className="settings-body">
@@ -57,8 +59,8 @@ export function SettingsModal({
           )}
           {section === "remix" && <RemixLibrary />}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -349,7 +351,7 @@ function RemixLibrary() {
           <input value={form.whyItWorks} onChange={(e) => setForm({ ...form, whyItWorks: e.target.value })} />
         </label>
         {error && <div className="banner-error">{error}</div>}
-        <button className="btn-primary" disabled={!form.hook} onClick={add}>
+        <button className="btn-primary" style={{ justifySelf: "start" }} disabled={!form.hook} onClick={add}>
           Add to library
         </button>
       </div>

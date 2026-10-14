@@ -1,6 +1,8 @@
 import type { BlitzCard, ProductProfile, Slide, ViralReference } from "../../shared/types.js";
 import type { ContentAI, RemixDraft } from "./ai.js";
 import { gradientFor, type ImageSearch } from "./images.js";
+import type { BrollClip } from "../../shared/types.js";
+import { clipToVideo, matchClip } from "./broll-match.js";
 import type { VideoSearch } from "./videos.js";
 
 const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -34,6 +36,7 @@ export async function buildCard(
   ai: ContentAI,
   images: ImageSearch,
   videos: VideoSearch,
+  library: BrollClip[] = [],
 ): Promise<BlitzCard> {
   let draft: RemixDraft;
   let generator: BlitzCard["generator"] = "template";
@@ -62,7 +65,11 @@ export async function buildCard(
       theme: draft.theme,
       referenceId: ref.id,
       slides: [{ id, text, imageQuery: query, imageUrl: null, background: gradientFor(id), textY: 0.55 }],
-      video: await videos.find(query, variantSeed),
+      // Your own B-roll library first (owned or cleared clips), then stock footage.
+      video: (() => {
+        const clip = matchClip(library, query, variantSeed);
+        return clip ? clipToVideo(clip, query) : null;
+      })() ?? (await videos.find(query, variantSeed)),
       caption: draft.caption,
       hashtags: draft.hashtags.map((h) => h.replace(/^#/, "")),
       why: draft.why,

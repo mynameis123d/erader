@@ -8,6 +8,7 @@ type FetchLike = typeof fetch;
 
 /** Shape of the fields we read from Clockworks' TikTok scraper output. Everything is optional. */
 interface ApifyTikTokItem {
+  authorMeta?: { name?: string };
   id?: string;
   text?: string;
   playCount?: number;
@@ -94,4 +95,71 @@ export function toReferences(items: ApifyTikTokItem[], limit = 15): ViralReferen
         views: i.playCount,
       };
     });
+}
+
+/** Candidate B-roll clips from TikTok. They start as "needs_permission": nothing is downloaded yet. */
+export function toBrollCandidates(items: ApifyTikTokItem[], tags: string[]): import("../../shared/types.js").BrollClip[] {
+  return items
+    .filter((i) => i.webVideoUrl && !i.isSlideshow && (i.videoMeta?.duration ?? 0) >= 3)
+    .sort((a, b) => (b.playCount ?? 0) - (a.playCount ?? 0))
+    .map((i) => {
+      const caption = (i.text ?? "").replace(/\s+/g, " ").trim();
+      const cover = i.videoMeta?.coverUrl ?? i.videoMeta?.originalCoverUrl ?? (Array.isArray(i.covers) ? i.covers[0] : i.covers?.default);
+      const hashtags = (caption.match(/#[\p{L}\p{N}_]+/gu) ?? []).map((h) => h.slice(1).toLowerCase());
+      return {
+        id: `tt-${i.id ?? Math.random().toString(36).slice(2, 10)}`,
+        source: "tiktok" as const,
+        title: caption.replace(/#[\p{L}\p{N}_]+/gu, "").trim().slice(0, 90) || "TikTok clip",
+        tags: [...new Set([...tags, ...hashtags])].slice(0, 12),
+        creator: i.authorMeta?.name,
+        sourceUrl: i.webVideoUrl,
+        thumbnail: typeof cover === "string" ? cover : undefined,
+        duration: i.videoMeta?.duration,
+        views: i.playCount,
+        likes: i.diggCount,
+        rights: "needs_permission" as const,
+        fileUrl: null,
+        addedAt: new Date().toISOString(),
+      };
+    });
+}
+
+export class ApifyClips {
+  constructor(
+    private token: string | null,
+    private actor = "clockworks~tiktok-scraper",
+    private fetchImpl: FetchLike = fetch,
+  ) {}
+
+  get enabled() {
+    return Boolean(this.token);
+  }
+
+  private async run(input: Record<string, unknown>): Promise<ApifyTikTokItem[]> {
+    if (!this.token) throw new Error("Set APIFY_TOKEN in apps/blitz/.env");
+    const res = await this.fetchImpl(
+      `https://api.apify.com/v2/acts/${this.actor}/run-sync-get-dataset-items?token=${encodeURIComponent(this.token)}&timeout=280`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: AbortSignal.timeout(300000) },
+    );
+    if (res.status === 401 || res.status === 403) throw new Error("Apify rejected the token");
+    if (!res.ok) throw new Error(`Apify HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return (await res.json()) as ApifyTikTokItem[];
+  }
+
+  /** Find popular videos in the category. Returns candidates only; nothing is downloaded. */
+  async discover(hashtags: string[], perTag = 12) {
+    const tags = hashtags.map((h) => h.replace(/^#/, "").replace(/\s+/g, "").toLowerCase()).filter(Boolean).slice(0, 5);
+    if (!tags.length) throw new Error("Add topics to your brand profile, or type a search");
+    const items = await this.run({ hashtags: tags, resultsPerPage: perTag, shouldDownloadVideos: false, shouldDownloadCovers: false });
+    return toBrollCandidates(items, tags);
+  }
+
+  /** Media URL of one post, for a clip whose creator has given permission. */
+  async mediaUrl(postUrl: string): Promise<string> {
+    const items = await this.run({ postURLs: [postUrl], shouldDownloadVideos: true, shouldDownloadCovers: false });
+    const item = items[0] as (ApifyTikTokItem & { mediaUrls?: string[]; videoMeta?: { downloadAddr?: string } }) | undefined;
+    const url = item?.mediaUrls?.[0] ?? item?.videoMeta?.downloadAddr;
+    if (!url) throw new Error("Apify returned no downloadable video for this post");
+    return url;
+  }
 }

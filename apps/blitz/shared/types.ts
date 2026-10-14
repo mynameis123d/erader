@@ -58,7 +58,7 @@ export interface Slide {
 /** Stock background clip (Pexels / Pixabay) behind a video post. */
 export interface CardVideo {
   query: string;
-  source: "pexels" | "pixabay";
+  source: "pexels" | "pixabay" | "library";
   /** High-res MP4 used for the export. */
   url: string;
   /** Lighter MP4 for the in-app preview. */
@@ -149,3 +149,30 @@ export interface IntegrationsStatus {
   videos: "pexels" | "pixabay" | null;
   apify: boolean;
 }
+
+/**
+ * Usage rights of a B-roll clip. Only "owned", "licensed" and "cleared" clips can be published.
+ * TikTok clips found through Apify start as "needs_permission" until the creator agrees.
+ */
+export type ClipRights = "owned" | "licensed" | "needs_permission" | "requested" | "cleared" | "declined";
+
+export interface BrollClip {
+  id: string;
+  source: "tiktok" | "upload";
+  title: string;
+  tags: string[];
+  creator?: string;
+  sourceUrl?: string;
+  thumbnail?: string;
+  duration?: number;
+  views?: number;
+  likes?: number;
+  rights: ClipRights;
+  /** Proof of permission, e.g. "Creator approved by DM on Oct 14". */
+  rightsNote?: string;
+  /** Local /media path once the file is in the library. */
+  fileUrl: string | null;
+  addedAt: string;
+}
+
+export const USABLE_RIGHTS: ClipRights[] = ["owned", "licensed", "cleared"];

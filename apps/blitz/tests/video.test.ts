@@ -70,3 +70,22 @@ describe("Apify trends", () => {
     expect(refs[1]).toMatchObject({ format: "video", hook: "pov: you finally found shoes that work" });
   });
 });
+
+import { matchClip } from "../server/services/broll";
+import type { BrollClip } from "../shared/types";
+
+describe("B-roll library", () => {
+  const clip = (id: string, rights: BrollClip["rights"], tags: string[], fileUrl: string | null = `/media/broll/${id}.mp4`): BrollClip => ({
+    id, source: "tiktok", title: id, tags, rights, fileUrl, addedAt: "",
+  });
+  it("only matches clips that are owned, licensed or cleared and downloaded", () => {
+    const clips = [
+      clip("pending", "needs_permission", ["running", "sunset"]),
+      clip("declined", "declined", ["running", "sunset"]),
+      clip("notyet", "cleared", ["running", "sunset"], null),
+      clip("ok", "cleared", ["running"]),
+    ];
+    expect(matchClip(clips, "woman running sunset path")?.id).toBe("ok");
+    expect(matchClip(clips, "city night")).toBeNull();
+  });
+});

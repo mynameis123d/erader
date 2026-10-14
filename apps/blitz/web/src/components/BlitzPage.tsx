@@ -1,13 +1,18 @@
+import { AnimatePresence, animate, motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
+import { Brain, Check, Pencil, RefreshCw, Sparkles, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type BlitzCard, type RefMap } from "../api";
+import { CardMedia, formatLabel } from "./CardMedia";
 import { EditModal } from "./EditModal";
 import { RemixedFrom } from "./RemixedFrom";
-import { CardMedia, formatLabel } from "./CardMedia";
+import { toast } from "./Toaster";
+import { serviceIcon } from "./icons";
 
 const REFILL_BELOW = 3;
-const SWIPE_THRESHOLD = 120;
+const SWIPE_DISTANCE = 140;
+const SWIPE_VELOCITY = 650;
 
-type Fly = "left" | "right" | null;
+type Decision = "approve" | "reject";
 
 export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
   const [cards, setCards] = useState<BlitzCard[]>([]);
@@ -15,14 +20,12 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dx, setDx] = useState(0);
-  const [fly, setFly] = useState<Fly>(null);
-  const [whyOpen, setWhyOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
-  const [toast, setToast] = useState<string | null>(null);
-  const [lastDecided, setLastDecided] = useState<{ card: BlitzCard; decision: "approve" | "reject" } | null>(null);
-  const drag = useRef<{ x: number; id: number } | null>(null);
+  const [exitDir, setExitDir] = useState<1 | -1>(1);
+  const [lastDecided, setLastDecided] = useState<{ card: BlitzCard; decision: Decision } | null>(null);
+  const [session, setSession] = useState({ approved: 0, skipped: 0 });
+  const busy = useRef(false);
 
   const top = cards[0];
 
@@ -55,47 +58,43 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
     if (!loading && !generating && !error && cards.length < REFILL_BELOW) void refill();
   }, [loading, generating, error, cards.length, refill]);
 
-  useEffect(() => {
-    setSlideIndex(0);
-    setWhyOpen(false);
-  }, [top?.id]);
+  useEffect(() => setSlideIndex(0), [top?.id]);
 
   const decide = useCallback(
-    (decision: "approve" | "reject") => {
-      if (!top || fly) return;
-      setFly(decision === "approve" ? "right" : "left");
-      setTimeout(() => {
-        setCards((c) => c.slice(1));
-        setFly(null);
-        setDx(0);
-        setLastDecided({ card: top, decision });
-        api
-          .decide(top.id, decision)
-          .then((r) => {
-            if (r.publishing) {
-              setToast(`Sending "${top.theme}" to your channels via Buffer…`);
-              setTimeout(() => setToast(null), 3500);
-            }
-            onCountsChange();
-          })
-          .catch((e) => setError(e.message));
-      }, 260);
+    (decision: Decision) => {
+      if (!top || busy.current) return;
+      busy.current = true;
+      setExitDir(decision === "approve" ? 1 : -1);
+      setCards((c) => c.slice(1));
+      setLastDecided({ card: top, decision });
+      setSession((s) => (decision === "approve" ? { ...s, approved: s.approved + 1 } : { ...s, skipped: s.skipped + 1 }));
+      setTimeout(() => (busy.current = false), 220);
+      api
+        .decide(top.id, decision)
+        .then((r) => {
+          if (r.publishing) toast.success(`“${top.theme}” is on its way to your channels`);
+          else if (decision === "approve") toast.info(`Approved “${top.theme}”. Find it under Content`);
+          onCountsChange();
+        })
+        .catch((e) => toast.error(e.message));
     },
-    [top, fly, onCountsChange],
+    [top, onCountsChange],
   );
 
   const undo = useCallback(async () => {
     if (!lastDecided) return;
-    const { card } = lastDecided;
+    const { card, decision } = lastDecided;
     setLastDecided(null);
+    setSession((s) => (decision === "approve" ? { ...s, approved: s.approved - 1 } : { ...s, skipped: s.skipped - 1 }));
     await api.decide(card.id, "undo");
+    setExitDir(decision === "approve" ? 1 : -1);
     setCards((c) => [card, ...c]);
     onCountsChange();
   }, [lastDecided, onCountsChange]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (editing || (e.target as HTMLElement).closest("input, textarea")) return;
+      if (editing || (e.target as HTMLElement).closest("input, textarea, select, [role=dialog]")) return;
       if (e.key === "ArrowRight") decide("approve");
       else if (e.key === "ArrowLeft") decide("reject");
       else if (e.key.toLowerCase() === "e" && top) setEditing(true);
@@ -105,123 +104,267 @@ export function BlitzPage({ onCountsChange }: { onCountsChange: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [decide, undo, editing, top]);
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (fly) return;
-    drag.current = { x: e.clientX, id: e.pointerId };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (drag.current?.id === e.pointerId) setDx(e.clientX - drag.current.x);
-  };
-  const onPointerUp = () => {
-    if (!drag.current) return;
-    drag.current = null;
-    if (dx > SWIPE_THRESHOLD) decide("approve");
-    else if (dx < -SWIPE_THRESHOLD) decide("reject");
-    else setDx(0);
-  };
-
-  const transform = fly
-    ? `translateX(${fly === "right" ? 140 : -140}%) rotate(${fly === "right" ? 18 : -18}deg)`
-    : `translateX(${dx}px) rotate(${dx / 18}deg)`;
-
-  if (loading) return <div className="center-msg">Loading…</div>;
+  const reference = top ? refs[top.referenceId] : undefined;
 
   return (
     <div className="blitz">
-      <RemixedFrom reference={top ? refs[top.referenceId] : undefined} />
-
-      <section className="blitz-main">
-        {top ? (
-          <>
-            <div className="chips">
-              <span className="chip chip-gray">{formatLabel(top)}</span>
-              <span className="chip chip-green">{top.theme}</span>
-            </div>
-            <div className="why-wrap">
-              <button className="why-btn" onClick={() => setWhyOpen((o) => !o)}>
-                <span aria-hidden>🧠</span> Why This Content?
-              </button>
-              {whyOpen && (
-                <div className="why-pop" role="dialog">
-                  <p>{top.why}</p>
-                  <small>{top.generator === "claude" ? "Remixed by Claude" : "Template remix (add ANTHROPIC_API_KEY for AI remixes)"}</small>
-                </div>
-              )}
-            </div>
-
-            <div className={`stack ${top.format === "video" ? "tall" : ""}`}>
-              {cards[2] && <div className="stack-ghost ghost-2" />}
-              {cards[1] && <div className="stack-ghost ghost-1" />}
-              <div
-                className={`card ${fly ? "flying" : dx === 0 ? "settle" : ""}`}
-                style={{ transform }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-              >
-                <CardMedia card={top} index={slideIndex} onIndex={setSlideIndex} />
-                <div className="stamp stamp-yes" style={{ opacity: Math.max(0, dx / SWIPE_THRESHOLD) }}>
-                  APPROVE
-                </div>
-                <div className="stamp stamp-no" style={{ opacity: Math.max(0, -dx / SWIPE_THRESHOLD) }}>
-                  SKIP
-                </div>
-              </div>
-            </div>
-
-            <div className="actions">
-              <div className="action-col">
-                <button className="round-btn big" aria-label="Reject" onClick={() => decide("reject")}>
-                  <svg viewBox="0 0 24 24" width="30" height="30" stroke="#ef3340" strokeWidth="2.4" fill="none" strokeLinecap="round">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                </button>
-                <kbd>←</kbd>
-              </div>
-              <button className="edit-btn" onClick={() => setEditing(true)}>
-                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 20h4L19 9l-4-4L4 16v4z" />
-                </svg>
-                Edit
-              </button>
-              <div className="action-col">
-                <button className="round-btn big" aria-label="Approve" onClick={() => decide("approve")}>
-                  <svg viewBox="0 0 24 24" width="32" height="32" stroke="#16b364" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12.5l5 5L20 6.5" />
-                  </svg>
-                </button>
-                <kbd>→</kbd>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="center-msg">{generating ? "Finding fresh viral formats for you…" : error ? null : "No cards right now."}</div>
-        )}
-
-        {error && (
-          <div className="banner-error">
-            {error} <button onClick={() => void refill()}>Retry</button>
+      <header className="page-head">
+        <div>
+          <h1>Blitz</h1>
+          <p className="sub">
+            {loading ? "Loading your feed…" : `${cards.length} idea${cards.length === 1 ? "" : "s"} ready`}
+            {generating && <span className="live-dot"> · writing more</span>}
+          </p>
+        </div>
+        <div className="head-actions">
+          <div className="session-pill" title="This session">
+            <span className="ok">
+              <Check size={13} /> {session.approved}
+            </span>
+            <span className="no">
+              <X size={13} /> {session.skipped}
+            </span>
           </div>
-        )}
-        {lastDecided && (
-          <button className="undo" onClick={() => void undo()}>
-            ↶ Undo {lastDecided.decision === "approve" ? "approve" : "skip"}
+          <button className="btn btn-ghost" onClick={() => void refill()} disabled={generating}>
+            <RefreshCw size={15} className={generating ? "spin" : ""} /> More ideas
           </button>
-        )}
-        {generating && top && <div className="generating">Generating more…</div>}
-        {toast && <div className="toast">{toast}</div>}
-      </section>
+        </div>
+      </header>
 
-      {editing && top && (
-        <EditModal
-          card={top}
-          startIndex={slideIndex}
-          onClose={() => setEditing(false)}
-          onSaved={(card) => setCards((c) => c.map((x) => (x.id === card.id ? card : x)))}
-        />
-      )}
+      <div className="stage">
+        <section className="side-panel left">
+          <AnimatePresence mode="wait">
+            {reference && (
+              <motion.div
+                key={reference.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <RemixedFrom reference={reference} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+
+        <section className="center">
+          {top ? (
+            <motion.div className="chips" key={`chips-${top.id}`} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}>
+              <span className="chip chip-muted">{formatLabel(top)}</span>
+              <span className="chip chip-accent">{top.theme}</span>
+            </motion.div>
+          ) : (
+            <div className="chips" />
+          )}
+
+          <div className={`deck ${top?.format === "video" ? "tall" : ""}`}>
+            {loading || (!top && generating) ? (
+              <div className="card-skeleton">
+                <div className="shimmer" />
+                <span>{loading ? "Loading…" : "Finding formats that work for you…"}</span>
+              </div>
+            ) : !top ? (
+              <div className="deck-empty">
+                <Sparkles size={22} />
+                <b>{error ? "Couldn't write new ideas" : "You're all caught up"}</b>
+                <span>{error ?? "Get another batch whenever you're ready."}</span>
+                <button className="btn btn-primary" onClick={() => void refill()}>
+                  {error ? "Try again" : "Generate ideas"}
+                </button>
+              </div>
+            ) : (
+              <>
+                {cards.slice(1, 3).map((c, i) => (
+                  <motion.div
+                    key={c.id}
+                    className="deck-back"
+                    initial={false}
+                    animate={{ scale: 1 - (i + 1) * 0.045, y: (i + 1) * 14, opacity: 1 - (i + 1) * 0.25 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    style={{ zIndex: 2 - i }}
+                  />
+                ))}
+                <AnimatePresence custom={exitDir} initial={false}>
+                  <SwipeCard key={top.id} card={top} dir={exitDir} slideIndex={slideIndex} onSlideIndex={setSlideIndex} onDecide={decide} />
+                </AnimatePresence>
+              </>
+            )}
+          </div>
+
+          <div className="actions">
+            <ActionButton label="Skip" hint="←" tone="no" onClick={() => decide("reject")} disabled={!top}>
+              <X size={28} strokeWidth={2.4} />
+            </ActionButton>
+            <motion.button className="edit-btn" whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => setEditing(true)} disabled={!top}>
+              <Pencil size={16} /> Edit <kbd>E</kbd>
+            </motion.button>
+            <ActionButton label="Approve" hint="→" tone="yes" onClick={() => decide("approve")} disabled={!top}>
+              <Check size={30} strokeWidth={2.6} />
+            </ActionButton>
+          </div>
+          <div className="undo-row">
+            <AnimatePresence>
+              {lastDecided && (
+                <motion.button className="undo" onClick={() => void undo()} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                  <Undo2 size={14} /> Undo {lastDecided.decision === "approve" ? "approve" : "skip"} <kbd>U</kbd>
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+        </section>
+
+        <section className="side-panel right">
+          <AnimatePresence mode="wait">
+            {top && (
+              <motion.div
+                key={top.id}
+                className="details"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="details-block why">
+                  <div className="details-label">
+                    <Brain size={14} /> Why this content
+                  </div>
+                  <p>{top.why}</p>
+                  <small>{top.generator === "claude" ? "Written by Claude for your brand" : "Template remix. Add an Anthropic key for AI-written posts"}</small>
+                </div>
+                <div className="details-block">
+                  <div className="details-label">Caption</div>
+                  <p className="caption-text">{top.caption}</p>
+                  <div className="tags">
+                    {top.hashtags.map((h) => (
+                      <span key={h}>#{h}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="details-block">
+                  <div className="details-label">Goes out as</div>
+                  <ul className="targets">
+                    <li>
+                      {serviceIcon("tiktok", 18)} TikTok <em>{top.format === "video" ? "video" : "photo carousel"}</em>
+                    </li>
+                    <li>
+                      {serviceIcon("instagram", 18)} Instagram <em>{top.format === "video" ? "Reel" : "carousel"}</em>
+                    </li>
+                    <li>
+                      {serviceIcon("youtube", 18)} YouTube <em>Short</em>
+                    </li>
+                  </ul>
+                  {top.video && <small className="credit-line">Footage: {top.video.credit}</small>}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+      </div>
+
+      <AnimatePresence>
+        {editing && top && (
+          <EditModal
+            card={top}
+            startIndex={slideIndex}
+            onClose={() => setEditing(false)}
+            onSaved={(card) => {
+              setCards((c) => c.map((x) => (x.id === card.id ? card : x)));
+              toast.success("Changes saved");
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SwipeCard({
+  card,
+  dir,
+  slideIndex,
+  onSlideIndex,
+  onDecide,
+}: {
+  card: BlitzCard;
+  dir: 1 | -1;
+  slideIndex: number;
+  onSlideIndex: (i: number) => void;
+  onDecide: (d: Decision) => void;
+}) {
+  const x = useMotionValue(0);
+  const rotate = useTransform(x, [-300, 0, 300], [-14, 0, 14]);
+  const yes = useTransform(x, [20, SWIPE_DISTANCE], [0, 1]);
+  const no = useTransform(x, [-SWIPE_DISTANCE, -20], [1, 0]);
+
+  const onDragEnd = (_: unknown, info: PanInfo) => {
+    if (info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY) onDecide("approve");
+    else if (info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY) onDecide("reject");
+    else animate(x, 0, { type: "spring", stiffness: 500, damping: 32 });
+  };
+
+  return (
+    <motion.div
+      className="swipe-card"
+      style={{ x, rotate, zIndex: 5 }}
+      drag="x"
+      dragElastic={0.9}
+      dragConstraints={{ left: 0, right: 0 }}
+      onDragEnd={onDragEnd}
+      custom={dir}
+      initial={{ scale: 0.94, y: 14, opacity: 0.6 }}
+      animate={{ scale: 1, y: 0, opacity: 1 }}
+      variants={{
+        exit: (d: 1 | -1) => ({
+          x: d * 620,
+          rotate: d * 22,
+          opacity: 0,
+          transition: { duration: 0.32, ease: [0.32, 0.72, 0, 1] },
+        }),
+      }}
+      exit="exit"
+      transition={{ type: "spring", stiffness: 320, damping: 28 }}
+    >
+      <CardMedia card={card} index={slideIndex} onIndex={onSlideIndex} />
+      <motion.div className="stamp stamp-yes" style={{ opacity: yes }}>
+        <Check size={18} strokeWidth={3} /> Approve
+      </motion.div>
+      <motion.div className="stamp stamp-no" style={{ opacity: no }}>
+        <X size={18} strokeWidth={3} /> Skip
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ActionButton({
+  children,
+  label,
+  hint,
+  tone,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  label: string;
+  hint: string;
+  tone: "yes" | "no";
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="action-col">
+      <motion.button
+        className={`round-btn ${tone}`}
+        aria-label={label}
+        onClick={onClick}
+        disabled={disabled}
+        whileHover={{ scale: 1.06, y: -2 }}
+        whileTap={{ scale: 0.9 }}
+        transition={{ type: "spring", stiffness: 500, damping: 22 }}
+      >
+        {children}
+      </motion.button>
+      <kbd>{hint}</kbd>
     </div>
   );
 }

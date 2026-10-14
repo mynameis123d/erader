@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { BufferChannel, PublishMode } from "../../../shared/types";
 import { api, DEMO, type BlitzCard, type PublishRecord } from "../api";
@@ -26,6 +27,12 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
 
   return (
     <div className="queue">
+      <header className="page-head">
+        <div>
+          <h1>Content</h1>
+          <p className="sub">Approved posts, and everything already sent to Buffer.</p>
+        </div>
+      </header>
       <div className="tabs">
         <button className={tab === "approved" ? "on" : ""} onClick={() => setTab("approved")}>
           Approved
@@ -65,6 +72,7 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
           ))}
         </div>
       )}
+      <AnimatePresence>
       {publishing && (
         <PublishDialog
           card={publishing}
@@ -75,7 +83,8 @@ export function QueuePage({ onCountsChange }: { onCountsChange: () => void }) {
           }}
         />
       )}
-      {editing && <EditModal card={editing} onClose={() => setEditing(null)} onSaved={() => void load()} />}
+      </AnimatePresence>
+      <AnimatePresence>{editing && <EditModal card={editing} onClose={() => setEditing(null)} onSaved={() => void load()} />}</AnimatePresence>
     </div>
   );
 }
@@ -150,8 +159,8 @@ function PublishDialog({ card, onClose, onDone }: { card: BlitzCard; onClose: ()
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal publish-modal" role="dialog" aria-label="Publish">
+    <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div className="modal publish-modal" role="dialog" initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: "spring", stiffness: 420, damping: 34 }} aria-label="Publish">
         <button className="modal-close" onClick={onClose} aria-label="Close">
           ×
         </button>
@@ -238,8 +247,8 @@ function PublishDialog({ card, onClose, onDone }: { card: BlitzCard; onClose: ()
             {busy ? "Working…" : `Send to ${selected.length} channel${selected.length === 1 ? "" : "s"}`}
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

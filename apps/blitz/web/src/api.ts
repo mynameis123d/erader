@@ -1,5 +1,6 @@
 import type {
   BlitzCard,
+  BrollClip,
   IntegrationsStatus,
   ProductProfile,
   PublishRecord,
@@ -8,6 +9,7 @@ import type {
   ViralReference,
 } from "../../shared/types";
 
+export type { BrollClip };
 export type { BlitzCard, IntegrationsStatus, ProductProfile, PublishingSettings, PublishRecord, PublishRequest, ViralReference };
 export type RefMap = Record<string, ViralReference | undefined>;
 
@@ -41,6 +43,18 @@ export const api = {
   newVideo: (id: string, query?: string) => call<{ card: BlitzCard }>(`/api/cards/${id}/video`, { method: "POST", json: { query } }),
   publishingSettings: () => call<PublishingSettings>("/api/settings/publishing"),
   savePublishingSettings: (s: PublishingSettings) => call<PublishingSettings>("/api/settings/publishing", { method: "PUT", json: s }),
+  broll: () => call<{ clips: BrollClip[]; apify: boolean }>("/api/broll"),
+  uploadBroll: (file: File, title: string, tags: string) =>
+    call<{ clip: BrollClip }>(`/api/broll/upload?${new URLSearchParams({ title, tags })}`, {
+      method: "POST",
+      body: file,
+      headers: { "Content-Type": file.type || "video/mp4" },
+    }),
+  discoverBroll: (query?: string) => call<{ added: number; clips: BrollClip[] }>("/api/broll/discover", { method: "POST", json: { query } }),
+  patchBroll: (id: string, patch: Partial<Pick<BrollClip, "title" | "tags" | "rights" | "rightsNote">>) =>
+    call<{ clip: BrollClip }>(`/api/broll/${id}`, { method: "PATCH", json: patch }),
+  fetchBroll: (id: string) => call<{ clip: BrollClip }>(`/api/broll/${id}/fetch`, { method: "POST" }),
+  deleteBroll: (id: string) => call<{ ok: boolean }>(`/api/broll/${id}`, { method: "DELETE" }),
   pullTrending: () => call<{ added: number; references: ViralReference[] }>("/api/references/trending", { method: "POST" }),
   patchCard: (id: string, patch: Partial<Pick<BlitzCard, "theme" | "slides" | "caption" | "hashtags">>) =>
     call<{ card: BlitzCard }>(`/api/cards/${id}`, { method: "PATCH", json: patch }),
