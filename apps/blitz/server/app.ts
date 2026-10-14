@@ -155,7 +155,7 @@ export function createApp(baseCfg: Config = defaultConfig) {
     channelCache = null;
   }
   async function bufferChannels(force = false) {
-    if (!buffer) throw new HttpError(400, "BUFFER_API_KEY is not set in apps/blitz/.env");
+    if (!buffer) throw new HttpError(400, "Add your Buffer key in Settings → API keys");
     if (!force && channelCache && Date.now() - channelCache.at < 60_000) return channelCache;
     let orgId = cfg.bufferOrganizationId;
     if (!orgId) {

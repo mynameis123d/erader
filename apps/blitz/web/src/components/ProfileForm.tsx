@@ -47,6 +47,11 @@ export function ProfileForm({ initial, onSaved }: { initial: ProductProfile | nu
     }
   };
 
+  const PLACEHOLDERS: Partial<Record<keyof Draft, string>> = {
+    audience: "Who buys it? e.g. busy commuters aged 22-35 who walk a lot",
+    tone: "e.g. playful, confident, a little dry",
+    oneLiner: "What it is and who it's for, in one sentence",
+  };
   const field = (key: keyof Draft, label: string, multiline = false) => {
     if (!draft) return null;
     const v = draft[key];
@@ -57,9 +62,9 @@ export function ProfileForm({ initial, onSaved }: { initial: ProductProfile | nu
       <label>
         {label}
         {multiline || isList ? (
-          <textarea rows={isList ? 4 : 2} value={value} onChange={(e) => set(e.target.value)} placeholder={isList ? "One per line" : undefined} />
+          <textarea rows={isList ? 4 : 2} value={value} onChange={(e) => set(e.target.value)} placeholder={isList ? "One per line" : PLACEHOLDERS[key]} />
         ) : (
-          <input value={value} onChange={(e) => set(e.target.value)} />
+          <input value={value} onChange={(e) => set(e.target.value)} placeholder={PLACEHOLDERS[key]} />
         )}
       </label>
     );
@@ -78,7 +83,7 @@ export function ProfileForm({ initial, onSaved }: { initial: ProductProfile | nu
           {busy === "analyze" ? "Reading your site…" : "Analyze"}
         </button>
       </div>
-      {source === "heuristic" && <p className="muted">Basic analysis from page metadata. Add ANTHROPIC_API_KEY for a full AI read, or edit below.</p>}
+      {source === "heuristic" && <p className="muted">Basic analysis from your pages. Add your Claude key in Settings → API keys for a full AI read, or edit below.</p>}
       {error && <div className="banner-error">{error}. You can fill in the profile manually.</div>}
       {draft?.site && (
         <div className="site-read">

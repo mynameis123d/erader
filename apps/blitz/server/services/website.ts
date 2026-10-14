@@ -85,7 +85,8 @@ export function heuristicProfile(p: PageSummary): ProfileDraft {
   return {
     name,
     oneLiner: p.description || p.headings[0] || `${name}`,
-    audience: "People who need what this product does",
+    // Left empty on purpose: a generic guess reads worse than asking the user (Claude fills this in when connected).
+    audience: "",
     tone: "friendly, direct, confident",
     painPoints: [],
     benefits: p.headings.slice(0, 4),

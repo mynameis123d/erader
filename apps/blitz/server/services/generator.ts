@@ -71,8 +71,8 @@ export function templateDraft(profile: ProductProfile, format: ContentFormat, re
       .map((k) => k.replace(/[^a-z0-9]/gi, "").toLowerCase())
       .filter(Boolean),
     why: ref
-      ? `${ref.whyItWorks} This version reuses the same structure for ${profile.name}'s audience (${profile.audience}).`
-      : `An original idea for the "${angle ?? benefit}" angle, written for ${profile.audience}.`,
+      ? `${ref.whyItWorks} This version reuses the same structure for ${profile.name}'s audience${profile.audience ? ` (${profile.audience})` : ""}.`
+      : `An original idea for the "${angle ?? benefit}" angle${profile.audience ? `, written for ${profile.audience}` : ""}.`,
   };
   const q = (i: number) => ref?.imageQueries[i % Math.max(1, ref.imageQueries.length)] || thing;
   const hook = ref?.hook ?? `nobody talks about ${pain.toLowerCase()}`;

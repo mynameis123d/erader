@@ -14,8 +14,9 @@ function opt(name: string): string | null {
 export const config = {
   port: Number(process.env.PORT ?? 8787),
   rootDir: root,
-  dataDir: path.join(root, "data"),
-  mediaDir: path.join(root, "data", "media"),
+  /** Where state, keys and media live locally. BLITZ_DATA_DIR lets you keep separate workspaces. */
+  dataDir: opt("BLITZ_DATA_DIR") ?? path.join(root, "data"),
+  mediaDir: path.join(opt("BLITZ_DATA_DIR") ?? path.join(root, "data"), "media"),
   webDist: path.join(root, "web", "dist"),
   bufferApiKey: opt("BUFFER_API_KEY"),
   bufferOrganizationId: opt("BUFFER_ORGANIZATION_ID"),

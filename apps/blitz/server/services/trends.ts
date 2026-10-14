@@ -54,7 +54,7 @@ export class ApifyClient {
   }
 
   private async call<T>(path: string, init?: RequestInit): Promise<T> {
-    if (!this.token) throw new Error("Set APIFY_TOKEN in apps/blitz/.env");
+    if (!this.token) throw new Error("Add your Apify token in Settings → API keys");
     const sep = path.includes("?") ? "&" : "?";
     let res: Response;
     try {
@@ -114,7 +114,7 @@ export class ApifyClient {
    * plain requests or render their content with JavaScript.
    */
   async readWebsite(url: string): Promise<{ url: string; title: string; description: string; markdown: string }> {
-    if (!this.token) throw new Error("Set APIFY_TOKEN to read JavaScript-heavy websites");
+    if (!this.token) throw new Error("Add your Apify token in Settings → API keys to read JavaScript-heavy websites");
     const items = await this.call<{ metadata?: { url?: string; title?: string; description?: string }; markdown?: string; text?: string }[]>(
       `/acts/apify~rag-web-browser/run-sync-get-dataset-items?timeout=120`,
       { method: "POST", body: JSON.stringify({ query: url, maxResults: 1, outputFormats: ["markdown"], scrapingTool: "browser-playwright" }) },

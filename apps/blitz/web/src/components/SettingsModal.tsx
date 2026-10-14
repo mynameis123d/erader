@@ -105,7 +105,7 @@ function Integrations() {
               {!status
                 ? "Checking…"
                 : !status.buffer.configured
-                  ? "No API key. Set BUFFER_API_KEY in apps/blitz/.env"
+                  ? "No key yet. Add it under API keys"
                   : status.buffer.ok
                     ? `Connected · ${channels.length} channel${channels.length === 1 ? "" : "s"}`
                     : `Error: ${status.buffer.error}`}
@@ -185,7 +185,7 @@ function Integrations() {
             {status?.photos === "pexels"
               ? "Pexels"
               : status?.photos === "openverse"
-                ? "Openverse public-domain photos (set PEXELS_API_KEY for better ones)"
+                ? "Openverse public-domain photos (add a Pexels key for better ones)"
                 : "painted scenes only"}
             . Painted scenes fill in whenever a photo is missing.
           </li>

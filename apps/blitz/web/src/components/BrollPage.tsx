@@ -176,11 +176,11 @@ export function BrollPage() {
               onKeyDown={(e) => e.key === "Enter" && apify && !discovering && discover()}
             />
           </div>
-          <button className="btn btn-dark" onClick={discover} disabled={!apify || discovering} title={apify ? "" : "Set APIFY_TOKEN on the server"}>
+          <button className="btn btn-dark" onClick={discover} disabled={!apify || discovering} title={apify ? "" : "Add your Apify token in Settings → API keys"}>
             {discovering ? <Loader2 size={15} className="spin" /> : <Search size={15} />} {discovering ? "Searching TikTok…" : "Search TikTok"}
           </button>
         </div>
-        {!apify && <small className="muted">Add APIFY_TOKEN to apps/blitz/.env to turn this on.</small>}
+        {!apify && <small className="muted">Add your Apify token in Settings → API keys to turn this on.</small>}
         <div className="discover-form run-import">
           <input placeholder="Or import an existing Apify run ID (e.g. shAvi3SgXuKTxZUCG)" value={runId} onChange={(e) => setRunId(e.target.value)} />
           <button className="btn btn-ghost" disabled={!apify || !/^[A-Za-z0-9]{8,32}$/.test(runId.trim())} onClick={importRun}>
@@ -287,7 +287,7 @@ function ClipTile({
 }) {
   const [hover, setHover] = useState(false);
   const usable = Boolean(clip.fileUrl) && USABLE_RIGHTS.includes(clip.rights);
-  const r = RIGHTS[clip.rights];
+  const r = clip.source === "website" ? { label: "Your website", tone: "ok" } : clip.kind === "image" && clip.rights === "owned" ? { label: "Your photo", tone: "ok" } : RIGHTS[clip.rights];
   return (
     <motion.div
       layout
